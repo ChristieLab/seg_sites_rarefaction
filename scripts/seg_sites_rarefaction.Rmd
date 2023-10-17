@@ -8,28 +8,56 @@ date: "2023-08-11"
 knitr::opts_chunk$set(echo = TRUE); library(snpR); library(ggplot2); library(data.table)
 
 ```
-
-# Generate data
+# Define parameters
 ```{r}
 # Generate some example data:
 ## define parameters
+seed <- 231232
 allele_frequencies <- seq(.001, .1, by = .001) # allele frequencies
 n1 <- 2000 # p1 gene copy number
 n2 <- 200 # p2 gene copy number
 k <- 30 # number to rarefact to
 mcmcs <- 10000 # number of mcmc draws
+max_missing <- 30 # maximum percentage of missing data in a locus, from a uniform dist
 
-## generate genotypes
-g1 <- matrix(0, nrow = length(allele_frequencies), ncol = n1) # init
-g2 <- matrix(0, nrow = length(allele_frequencies), ncol = n2)
 
-m1 <- lapply(n1*allele_frequencies, function(x) sample(n1, x, FALSE))  # which are the minor
-m2 <- lapply(n2*allele_frequencies, function(x) sample(n2, x, FALSE))
+## derived
+set.seed(seed)
+nal <- length(allele_frequencies)
+miss_percent <- floor(runif(nal, 0, max_missing))/100
 
-populate <- function(g, minors){g[minors] <- 1; return(g)} # function to replace minors
-for(i in 1:length(allele_frequencies)){ # do for every locus
-  g1[i,] <- populate(g1[i,], m1[[i]])
-  g2[i,] <- populate(g2[i,], m2[[i]])
+```
+
+
+# Generate data
+```{r}
+# generate genotypes
+g1 <- matrix(0, nrow = nal, ncol = n1) # init
+g2 <- matrix(0, nrow = nal, ncol = n2)
+
+# add missing data
+ms1 <- lapply(n1*miss_percent, function(x) sample(n1, x, FALSE))  # which are missing
+ms2 <- lapply(n2*miss_percent, function(x) sample(n2, x, FALSE))
+
+# determine minor allele placements
+ma1 <- ma2 <- vector("list", length(ms1))
+for(i in 1:nal){
+  ma1[[i]] <- sample(n1*(1-miss_percent)[i], (n1*(1-miss_percent)*allele_frequencies)[i], FALSE)
+  ma2[[i]] <- sample(n2*(1-miss_percent)[i], (n2*(1-miss_percent)*allele_frequencies)[i], FALSE)
+
+}
+
+# populate
+## function to replace minors
+populate <- function(g, missing, minors){
+  g[missing] <- NA
+  g[-missing][minors] <- 1
+  return(g)
+}
+## do for every locus
+for(i in 1:nal){ 
+  g1[i,] <- populate(g1[i,], ms1[[i]], ma1[[i]])
+  g2[i,] <- populate(g2[i,], ms2[[i]], ma2[[i]])
 }
 
 ## combine into individuals
@@ -40,7 +68,9 @@ g2 <- g2[,1:(ncol(g2)/2)] + g2[,((ncol(g2)/2) + 1):ncol(g2)]
 # Via rarefaction approach
 ```{r}
 counts <- function(g){
-  return(data.frame(majhom = rowSums(g == 0), het = rowSums(g == 1), minhom = rowSums(g == 2)))
+  return(data.frame(majhom = rowSums(g == 0, na.rm = TRUE), 
+                    het = rowSums(g == 1, na.rm = TRUE), 
+                    minhom = rowSums(g == 2, na.rm = TRUE)))
 }
 rarefact <- function(counts, k){
   return(1 - ((choose(counts[,1], k) + choose(counts[,3], k))/choose(rowSums(counts), k)))
@@ -48,7 +78,7 @@ rarefact <- function(counts, k){
 varseg <- function(p) p*(1-p)
 
 
-# taken from the binom package
+# taken from the binom package, asymptotic method
 confint_pb <- function(p, n, alpha){
   alpha <- rep(alpha, length = length(p))
   alpha2 <- 0.5 * alpha
@@ -63,23 +93,6 @@ confint_pb <- function(p, n, alpha){
   return(data.frame(lower = lcl, upper = ucl))
 }
 
-# confint_sum <- function(nT, n, alpha){
-#   Tbar <- nT/n
-#   
-#   if(n*Tbar == 0){return(0)}
-#   
-#   alpha_star <- zipfR::Rbeta((n*Tbar - 1)/n, n*Tbar, (n*(1 - Tbar)) + 1)
-#   
-#   if(alpha_star <= alpha & alpha <= 1){
-#     top <- 1 - alpha
-#     bottom <- n*(1 - alpha_star)
-#     res <- Tbar - (top/bottom)
-#   }
-#   if(0 <= alpha & alpha <= alpha_star){
-#     return(zipfR::Rbeta.inv(alpha, n*Tbar, n*(1 - Tbar) + 1))
-#   }
-#   
-# }
 
 c1 <- counts(g1) # geno counts
 c2 <- counts(g2)
@@ -93,8 +106,8 @@ vseg2 <- varseg(pseg2)
 ciseg1 <- confint_pb(pseg1, k, .05)
 ciseg2 <- confint_pb(pseg2, k, .05)
 
-p1 <- sum(pseg1)/length(allele_frequencies)
-p2 <- sum(pseg2)/length(allele_frequencies)
+p1 <- sum(pseg1)/nal
+p2 <- sum(pseg2)/nal
 ```
 
 
@@ -102,6 +115,11 @@ p2 <- sum(pseg2)/length(allele_frequencies)
 
 ```{r}
 rarefact_mcmc <- function(g, k){
+  miss <- is.na(g)
+  if(any(miss)){
+    g <- g[-which(miss)]
+  }
+  
   samp <- sample(g, k, FALSE)
   seg <- ifelse(any(samp == 1), 1, # got hets
                 ifelse(any(samp == 0) & any(samp == 2), 1, 0)) # got both homs
@@ -109,9 +127,9 @@ rarefact_mcmc <- function(g, k){
 }
 
 # draw
-seg1 <- seg2 <- matrix(0, length(allele_frequencies), mcmcs)
+seg1 <- seg2 <- matrix(0, nal, mcmcs)
 for(i in 1:mcmcs){
-  for(j in 1:length(allele_frequencies)){
+  for(j in 1:nal){
     seg1[j,i] <- rarefact_mcmc(g1[j,], k = k)
     seg2[j,i] <- rarefact_mcmc(g2[j,], k = k)
   }
@@ -127,48 +145,14 @@ colnames(mpseg1) <- colnames(mpseg2) <- c("mean", "lower", "upper")
 
 ```
 
-
-```{r}
-# mcmcs <- 1000
-# res <- d@geno.tables$gs
-# res <- data.table::as.data.table(res)
-# 
-# matches <- which(d@facet.meta$facet == "pop")
-# res <- res[matches,]
-# 
-# gs <- d@geno.tables$gs[matches,]
-# gs <- data.table::as.data.table(gs)
-# gs$.sum <- rowSums(gs) # sums for each row
-# gs <- cbind(as.data.table(d@facet.meta[matches,]), gs)
-# gs[,.g := min(.sum) - 1, by = .(facet, .snp.id)] # min across all levels
-# 
-# fwrite(res, "test_gs.txt", col.names = TRUE, sep = "\t", eol = "\n")
-# fwrite(data.table(g = gs$.g), "test_g.txt", col.names = FALSE, sep = "\t", eol = "\n")
-# fwrite(data.table(g = gs$subfacet), "test_subfacets.txt", col.names = FALSE, sep = "\t", eol = "\n")
-# 
-# 
-# cmd <- paste0("perl seg_sites_rarefaction.pl test_gs.txt test_g.txt test_subfacets.txt ", mcmcs, " test_out.txt")
-# system(cmd)
-# 
-# mcmc_res <- fread("test_out.txt")
-# fc <- ncol(mcmc_res)
-# mcmc_res <- mcmc_res[,-..fc]
-# colnames(mcmc_res)[1] <- "subfacet"
-# mcmc_res <- melt(mcmc_res, id.vars = "subfacet")
-# 
-# tr <- function(x){res <- t.test(x); return(list(seg_sites = res$estimate, lowerCI = res$conf.int[1], upperCI = res$conf.int[2]))}
-# mcmc_summary <- mcmc_res[,tr(value), by = subfacet]
-
-```
-
 # results
 ```{r}
 # individual loci
-pseg <- rbind(data.frame(pop = paste0("n = ", n1/2), p = pseg1, snp = 1:length(allele_frequencies), af = allele_frequencies),
-              data.frame(pop = paste0("n = ", n2/2), p = pseg2, snp = 1:length(allele_frequencies), af = allele_frequencies))
+pseg <- rbind(data.frame(pop = paste0("n = ", n1/2), p = pseg1, snp = 1:nal, af = allele_frequencies),
+              data.frame(pop = paste0("n = ", n2/2), p = pseg2, snp = 1:nal, af = allele_frequencies))
 
-oseg <- rbind(data.frame(pop = paste0("n = ", n1/2), p = mpseg1[,1], snp = 1:length(allele_frequencies), af = allele_frequencies),
-              data.frame(pop = paste0("n = ", n2/2), p = mpseg2[,1], snp = 1:length(allele_frequencies), af = allele_frequencies))
+oseg <- rbind(data.frame(pop = paste0("n = ", n1/2), p = mpseg1[,1], snp = 1:nal, af = allele_frequencies),
+              data.frame(pop = paste0("n = ", n2/2), p = mpseg2[,1], snp = 1:nal, af = allele_frequencies))
 
 pseg$source <- "Mathematical"
 oseg$source <- "Simulation"
@@ -179,8 +163,6 @@ cis <- rbind(cbind.data.frame(mpseg1, pop = paste0("n = ", n1/2), af = allele_fr
 colnames(cis) <- c("p", "lower", "upper", "pop", "af")
 seg <- merge(seg, cis[,c("lower", "upper", "af", "pop")], by = c("af", "pop"))
 seg$in_ci <- ifelse(seg$p >= seg$lower & seg$p <= seg$upper, TRUE, FALSE)
-
-ggplot(seg, aes(x = af, y = p, color = source)) + geom_point() + facet_wrap(~pop)
 
 ggplot(seg[seg$source == "Mathematical",],
        aes(x = af, y = p)) +
@@ -210,10 +192,9 @@ all_mcmc_sums <- rbind(cbind.data.frame(nseg = msum1, pop = paste0("n = ", n1/2)
 ggplot(sum_tab, aes(x = pop, y = nseg)) + 
   geom_point(color = "red") +
   geom_errorbar(data = msum_tab, aes(ymax = upper, ymin = lower, x= pop), inherit.aes = FALSE) +
-  # geom_point(data = msum_tab, color = "blue") +
   geom_jitter(data = all_mcmc_sums, height = 0, alpha = .005) +
   theme_bw() +
-  scale_y_continuous(limits = c(0, length(allele_frequencies)))
+  scale_y_continuous(limits = c(0, nal))
 
 tapply(seg[seg$source == "Mathematical",]$in_ci, seg[seg$source == "Mathematical",]$pop, mean, na.rm = TRUE)
 
@@ -242,8 +223,8 @@ overall_vars <- rbind(cbind.data.frame(estimated = sum(vseg1),
                                        pop = paste0("n = ", n2/2)))
 
 # estimated PI -- normal approx works well
-pi1 <- qnorm(.975)*sqrt(sum(vseg1))*sqrt(1 + (1/length(allele_frequencies)))
-pi2 <- qnorm(.975)*sqrt(sum(vseg2))*sqrt(1 + (1/length(allele_frequencies)))
+pi1 <- qnorm(.975)*sqrt(sum(vseg1))*sqrt(1 + (1/nal))
+pi2 <- qnorm(.975)*sqrt(sum(vseg2))*sqrt(1 + (1/nal))
 pi <- data.frame(pop = paste0("n = ", n1/2), 
                  lower = sum(pseg1) - pi1,
                  upper = sum(pseg1) + pi1)
