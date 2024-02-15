@@ -6,13 +6,14 @@ date: "2023-08-11"
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE); library(snpR); library(ggplot2); library(data.table);
+library(cowplot)
 ```
 
 
 # Define parameters
 ```{r}
 # define parameters
-seed <- 231233
+seed <- 231266
 threads <- 25
 allele_frequencies <- seq(.001, .1, by = .001) # allele frequencies
 n1 <- 5000 # p1 gene copy number
@@ -136,10 +137,6 @@ rarefact_mcmc <- function(g, k){
 combs <- expand.grid(k, mcmcs)
 colnames(combs) <- c("k", "iters")
 
-# draw for each k/mcmc count combination
-combs <- expand.grid(k, mcmcs)
-colnames(combs) <- c("k", "iters")
-
 tmcmcs <- combs$iters[q]
 tk <- combs$k[q]
 
@@ -166,7 +163,7 @@ saveRDS(res, paste0(outfile, "_", q, ".RDS"))
 
 # import and condense simulation results
 ```{r}
-res_files <- list.files("../data/seg_sites/", "\\.RDS", full.names = TRUE)
+res_files <- list.files("../data/", "\\.RDS", full.names = TRUE)
 res_files <- lapply(res_files, readRDS)
 ks <- unlist(purrr::map(res_files, "k"))
 n_iters <- unlist(purrr::map(res_files, "iters"))
@@ -177,7 +174,7 @@ n_iters <- unlist(purrr::map(res_files, "iters"))
 # Figure 1: Pseg for four individual runs (k = 10 and 100, N = 100, N = 1000)
 
 ```{r Figure1}
-prep_f1 <- function(pseg1, pseg2, mpseg1, mpseg2){
+prep_f1 <- function(pseg1, pseg2, mpseg1, mpseg2, n1, n2){
   #========plot the emperical CIs around every loci vs the predicted value==============
   # plotting the emperical CIs vs the estiamted mean
   pseg <- rbind(data.frame(pop = paste0("N = ", n1/2), p = pseg1, snp = 1:nal, af = allele_frequencies),
@@ -203,13 +200,17 @@ K10_data <- which(ks == 10 & n_iters == 10000)
 F1data_K10 <- prep_f1(pseg1 = pseg1$K_10, 
                       pseg2 = pseg2$K_10, 
                       mpseg1 = res_files[[K10_data]]$mpseg1,
-                      mpseg2 = res_files[[K10_data]]$mpseg2)
+                      mpseg2 = res_files[[K10_data]]$mpseg2,
+                      n1 = n1,
+                      n2 = n2)
 
 K100_data <- which(ks == 100 & n_iters == 10000)
 F1data_K100 <- prep_f1(pseg1 = pseg1$K_100, 
                        pseg2 = pseg2$K_100, 
                        mpseg1 = res_files[[K100_data]]$mpseg1,
-                       mpseg2 = res_files[[K100_data]]$mpseg2)
+                       mpseg2 = res_files[[K100_data]]$mpseg2,
+                       n1 = n1,
+                       n2 = n2)
 
 
 F1data_K10$K <- "gamma * ' = 10'"
@@ -242,9 +243,10 @@ tapply(F1data[F1data$source == "Mathematical", "in_ci"], F1data[F1data$source ==
 # Figure 2: Distribution of Nseg vs Eseg for four runs
 
 ```{r}
-prep_f2 <- function(seg1, seg2, vseg1, vseg2, F1data){
+prep_f2 <- function(seg1, seg2, vseg1, vseg2, F1data, n1, n2){
   seg <- F1data
   
+  # normal approximation CI and PI equation given var and N
   nap_pi <- function(alpha, vseg, n) qnorm(1 - (alpha/2))*sqrt(vseg)*sqrt(1 + (1/n))
   nap_ci <- function(alpha, vseg, n) qnorm(1 - (alpha/2))*sqrt(vseg)/sqrt(n)
   
@@ -291,14 +293,18 @@ F2data_K10 <- prep_f2(seg1 = res_files[[K10_data]]$seg1,
                       seg2 = res_files[[K10_data]]$seg2, 
                       vseg1 = vseg1$K_10,
                       vseg2 = vseg2$K_10,
-                      F1data = F1data_K10)
+                      F1data = F1data_K10,
+                      n1 = n1,
+                      n2 = n2)
 
 K100_data <- which(ks == 100 & n_iters == 10000)
 F2data_K100 <- prep_f2(seg1 = res_files[[K100_data]]$seg1, 
                        seg2 = res_files[[K100_data]]$seg2, 
                        vseg1 = vseg1$K_100,
                        vseg2 = vseg2$K_100,
-                       F1data = F1data_K100)
+                       F1data = F1data_K100,
+                       n1 = n1,
+                       n2 = n2)
 
 
 F2data_K10$sum_tab$K <- "gamma * ' = 10'"
@@ -333,28 +339,205 @@ f2 <- ggplot(F2data_mcmcs, aes(x = nseg)) +
         axis.title = element_text(size = t.sizes[1]),
         strip.text = element_text(size = t.sizes[1]),
         strip.background = element_blank()) +
-  xlab(bquote(italic(E*"("*N[S]*")"))) +
+  xlab(bquote(italic(N[S]))) +
   ylab("Density")
-
-
-
-Figure2 <- ggplot(sum_tab, aes(x = pop, y = nseg, color = in_ci)) + 
-  geom_jitter(data = all_mcmc_sums, aes(x = pop, y = nseg, color = in_pi), height = 0, alpha = .2) +
-  geom_point(size = 4, shape = 17) +
-  geom_errorbar(data = sum_tab, aes(ymax = upper, ymin = lower, x = pop), 
-                inherit.aes = FALSE, width = .25, color = ci_col, linewidth = 1) +
-  geom_errorbar(data = pi_tab, aes(ymax = upper, ymin = lower, x = pop), 
-                inherit.aes = FALSE, width = .5, linetype = "dashed", color = ci_col, linewidth = 1) +
-  theme_bw() +
-  theme(strip.background = element_blank()) +
-  scale_color_manual(values = colors) +
-  guides(color = guide_legend(title = "In CI/PI")) +
-  ylab(bquote(italic(E*"("*N[S]*")"))) +
-  xlab("Population")
 
 ggsave("Figure2.pdf", f2, height = 10, width = 15)
 
-tapply(all_mcmc_sums$in_pi, all_mcmc_sums$pop, mean, na.rm = TRUE)
+```
+
+# Figure 3: var vs difference between estimate and mean of simulations for mcmc and k
+
+```{r Figure3}
+# for all of the mpseg files, figure out if the percentage of points in the CI changes
+## do for both each SNP and for Ns
+ps_list <- ns_list <- vector("list", length(res_files))
+for(i in 1:length(res_files)){
+  tk <- res_files[[i]]$k
+  titers <- res_files[[i]]$iters
+  
+  ps_prep <- prep_f1(pseg1 = pseg1[[paste0("K_", tk)]],
+                     pseg2 = pseg2[[paste0("K_", tk)]], 
+                     mpseg1 = res_files[[i]]$mpseg1,
+                     mpseg2 = res_files[[i]]$mpseg2,
+                     n1 = n1,
+                     n2 = n2)
+  
+  ns_prep <- prep_f2(seg1 = res_files[[i]]$seg1, 
+                     seg2 = res_files[[i]]$seg2, 
+                     vseg1 = vseg1[[paste0("K_", tk)]],
+                     vseg2 = vseg2[[paste0("K_", tk)]],
+                     F1data = ps_prep,
+                     n1 = n1,
+                     n2 = n2)
+  
+  ps_prep$K <- tk
+  ps_prep$iters <- titers
+  ps_prep$sim_num <- i
+  
+  ns_prep$all_mcmc_sums$K <- tk
+  ns_prep$all_mcmc_sums$iters <- titers
+  ns_prep$all_mcmc_sums$i <- i
+  ns_prep$all_mcmc_sums$ENs <- ns_prep$sum_tab$nseg[match(ns_prep$all_mcmc_sums$pop,
+                                                          ns_prep$sum_tab$pop)]
+  
+  ps_list[[i]] <- ps_prep
+  ns_list[[i]] <- ns_prep$all_mcmc_sums
+}
+
+ps_all <- rbindlist(ps_list)
+
+ps_all_m <- ps_all[source == "Mathematical",]
+ps_all_s <- ps_all[source == "Simulation",]
+ps_all_merge <- merge(ps_all_m[,-c("source")], 
+                      ps_all_s[,-c("source")], 
+                      by = c("af", "pop", "snp", "sim_num", "lower", "upper", "K", "iters"), 
+                      suffixes = c(".mathematical", ".simulated"))
+ps_all_merge[,diff := p.mathematical - p.simulated]
+
+# Figure S1: gamma vs error rate
+ps_all_aggregate_for_K <- ps_all_merge[, lapply(.SD, mean), .SDcols = "in_ci.mathematical", by = .(K, iters, pop)]
+FS1 <- ggplot(ps_all_aggregate_for_K, aes(x = K, y = in_ci.mathematical*100)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_grid(iters~pop) +
+  theme_bw() +
+  # khroma::scale_color_batlow(discrete = TRUE, reverse = TRUE) +
+  # khroma::scale_fill_batlow(discrete = TRUE, reverse = TRUE) +
+  theme(axis.text = element_text(size = t.sizes[2]),
+        axis.title = element_text(size = t.sizes[1]),
+        strip.text = element_text(size = t.sizes[1]),
+        strip.background = element_blank(),
+        legend.title = element_text(size = t.sizes[1]),
+        legend.text = element_text(size = t.sizes[2])) +
+  xlab(parse(text = "gamma")) +
+  ylab("% estimates in CI")
+
+# Figure S2: maf vs error rate
+ps_all_aggregate_for_af <- ps_all_merge[, lapply(.SD, mean), .SDcols = "in_ci.mathematical", by = .(af, iters, pop)]
+FS2 <- ggplot(ps_all_aggregate_for_af, aes(x = af, y = in_ci.mathematical*100)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_grid(iters~pop) +
+  theme_bw() +
+  # khroma::scale_color_batlow(discrete = TRUE, reverse = TRUE) +
+  # khroma::scale_fill_batlow(discrete = TRUE, reverse = TRUE) +
+  theme(axis.text = element_text(size = t.sizes[2]),
+        axis.title = element_text(size = t.sizes[1]),
+        strip.text = element_text(size = t.sizes[1]),
+        strip.background = element_blank(),
+        legend.title = element_text(size = t.sizes[1]),
+        legend.text = element_text(size = t.sizes[2])) +
+  xlab("Minor Allele Frequency") +
+  ylab("% estimates in CI")
+
+
+f3a <- ggplot(ps_all_merge, aes(x = K, y = diff, color = in_ci.mathematical)) +
+  geom_point() +
+  theme_bw() +
+  facet_grid(~pop) +
+  khroma::scale_color_highcontrast() +
+  scale_x_continuous(breaks = k) +
+  theme(axis.text = element_text(size = t.sizes[2]),
+        axis.title = element_text(size = t.sizes[1]),
+        strip.text = element_text(size = t.sizes[1]),
+        strip.background = element_blank(),
+        legend.title = element_text(size = t.sizes[1]),
+        legend.text = element_text(size = t.sizes[2])) +
+  xlab(parse(text = "gamma")) +
+  ylab(bquote(italic(P*"("*S[jq]*")"[E]) - italic(P*"("*S[jq]*")"[O]))) +
+  guides(color = guide_legend(title = "In 95% CI"))
+
+f3b <- ggplot(ps_all_merge, aes(x = af, y = diff, color = in_ci.mathematical)) +
+  geom_point() +
+  theme_bw() +
+  facet_grid(~pop) +
+  khroma::scale_color_highcontrast() +
+  theme(axis.text = element_text(size = t.sizes[2]),
+        axis.title = element_text(size = t.sizes[1]),
+        strip.text = element_text(size = t.sizes[1]),
+        axis.text.x = element_text(size = t.sizes[2], angle = 90, vjust = .5),
+        strip.background = element_blank(),
+        legend.title = element_text(size = t.sizes[1]),
+        legend.text = element_text(size = t.sizes[2])) +
+  xlab("Minor Allele Frequency") +
+  ylab(bquote(italic(P*"("*S[jq]*")"[E]) - italic(P*"("*S[jq]*")"[O])))
+
+f3c <- ggplot(ps_all_merge, aes(x = iters, y = diff, color = in_ci.mathematical)) +
+  geom_point() +
+  theme_bw() +
+  facet_grid(~pop) +
+  khroma::scale_color_highcontrast() +
+  scale_x_continuous(breaks = mcmcs) +
+  theme(axis.text = element_text(size = t.sizes[2]),
+        axis.title = element_text(size = t.sizes[1]),
+        strip.text = element_text(size = t.sizes[1]),
+        axis.text.x = element_text(size = t.sizes[2], 
+                                   angle = 90, vjust = .5),
+        strip.background = element_blank(),
+        legend.title = element_text(size = t.sizes[1]),
+        legend.text = element_text(size = t.sizes[2])) +
+  xlab("Number of Simulated Draws") +
+  ylab(bquote(italic(P*"("*S[jq]*")"[E]) - italic(P*"("*S[jq]*")"[O])))
+
+f3l <- ggpubr::get_legend(f3a)
+f3 <- plot_grid(f3a + guides(color = "none"), 
+          f3b + guides(color = "none"), 
+          f3c + guides(color = "none"),
+          ncol = 1, 
+          align = "bl", 
+          axis = "bl")
+
+f3 <- plot_grid(f3, f3l, nrow = 1, rel_widths = c(1, .2))
+
+save_plot("Figure3.pdf", f3, base_height = 11, base_width = 15)
+```
+# Figure 4 Nseg vs parameters
+
+```{r Figure4}
+ns_all <- rbindlist(ns_list)
+
+ns_all$diff <- ns_all$ENs - ns_all$nseg
+
+f4a <- ggplot(ns_all[iters == 10000,], aes(x = K, y = nseg)) +
+  geom_errorbar(data = unique(ns_all[iters == 10000, c("pop", "K", "iters", "i", "lower", "upper")]),
+            aes(x = K, ymin = lower, ymax = upper), color = "#DDAA33", size = 1, 
+            position = position_nudge(x = 3.5),
+            inherit.aes = FALSE, width = 2) +
+  stat_ydensity(aes(group = K), draw_quantiles = c(.025, .975), scale = "width", bw = .4,
+                fill = NA, width = 6) +
+  facet_wrap(~pop) +
+  theme_bw() + 
+  scale_x_continuous(breaks = k) +
+  theme(axis.text = element_text(size = t.sizes[2]),
+        axis.title = element_text(size = t.sizes[1]),
+        legend.title = element_text(size = t.sizes[1]),
+        strip.text = element_text(size = t.sizes[1]),
+        strip.background = element_blank(),
+        legend.text = element_text(size = t.sizes[2])) +
+  ylab(bquote(italic(E*"("*N[S]*")") - italic(N[S,observed]))) +
+  xlab(bquote(gamma))
+
+f4b <- ggplot(ns_all[K == 50,], aes(x = iters, y = nseg)) +
+  geom_errorbar(data = unique(ns_all[K == 50,c("pop", "K", "iters", "i", "lower", "upper")]),
+            aes(x = iters, ymin = lower, ymax = upper), color = "#DDAA33", size = 1, 
+            position = position_nudge(x = 350),
+            inherit.aes = FALSE, width = 200) +
+  stat_ydensity(aes(group = iters), draw_quantiles = c(.025, .975), scale = "width", bw = .4,
+                fill = NA, width = 600) +
+  facet_wrap(~pop) +
+  theme_bw() + 
+  scale_x_continuous(breaks = mcmcs) +
+  theme(axis.text = element_text(size = t.sizes[2]),
+        axis.title = element_text(size = t.sizes[1]),
+        legend.title = element_text(size = t.sizes[1]),
+        strip.text = element_text(size = t.sizes[1]),
+        strip.background = element_blank(),
+        legend.text = element_text(size = t.sizes[2])) +
+  ylab(bquote(italic(E*"("*N[S]*")") - italic(N[S,observed]))) +
+  xlab("Number of Simulated Draws")
+
+
 ```
 
 
