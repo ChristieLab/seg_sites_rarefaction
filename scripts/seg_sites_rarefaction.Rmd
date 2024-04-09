@@ -219,16 +219,18 @@ F1data_K100$K <- "gamma * ' = 100'"
 F1data <- rbind(F1data_K10, F1data_K100)
 F1data$pop <- paste0("'", F1data$pop, "'")
 
+F1data$in_ci <- ifelse(F1data$in_ci, "Yes", "No")
+
 f1 <- ggplot(F1data[F1data$source == "Mathematical",],
              aes(x = af, y = p)) +
-  geom_point(aes(color = in_ci)) +
+  geom_point(aes(color = in_ci), size = 2.5) +
   geom_errorbar(aes(ymax = upper, ymin = lower)) +
   facet_grid(K~pop, labeller = label_parsed) +
   theme_bw() +
   theme(strip.background = element_blank()) +
   scale_color_manual(values = colors) +
-  guides(color = guide_legend(title = "In CI")) +
-  ylab(bquote(italic(P*"("*S[jq]*")"))) +
+  guides(color = guide_legend(title = "In 95% CI")) +
+  ylab(bquote(italic(hat(P)*"("*S[jq]*")"))) +
   xlab("Minor Allele Frequency") +
   theme(axis.text = element_text(size = t.sizes[2]),
         axis.title = element_text(size = t.sizes[1]),
@@ -240,7 +242,8 @@ ggsave("Figure1.pdf", f1, width = 15, height = 10)
 tapply(F1data[F1data$source == "Mathematical", "in_ci"], F1data[F1data$source == "Mathematical", c("K", "pop")], mean) # percent in interval
 ```
 
-# Figure 2: Distribution of Nseg vs Eseg for four runs
+# Figure 3: Distribution of Nseg vs Eseg for four runs
+Note that the label are flipped here: this produces figure 3.
 
 ```{r}
 prep_f2 <- function(seg1, seg2, vseg1, vseg2, F1data, n1, n2){
@@ -288,6 +291,14 @@ prep_f2 <- function(seg1, seg2, vseg1, vseg2, F1data, n1, n2){
   return(list(sum_tab = sum_tab, all_mcmc_sums = all_mcmc_sums, pi_tab = pi_tab))
 }
 
+K20_data <- which(ks == 20 & n_iters == 10000)
+F1data_K20 <- prep_f1(pseg1 = pseg1$K_20, 
+                       pseg2 = pseg2$K_20, 
+                       mpseg1 = res_files[[K20_data]]$mpseg1,
+                       mpseg2 = res_files[[K20_data]]$mpseg2,
+                       n1 = n1,
+                       n2 = n2)
+
 K10_data <- which(ks == 10 & n_iters == 10000)
 F2data_K10 <- prep_f2(seg1 = res_files[[K10_data]]$seg1, 
                       seg2 = res_files[[K10_data]]$seg2, 
@@ -297,44 +308,59 @@ F2data_K10 <- prep_f2(seg1 = res_files[[K10_data]]$seg1,
                       n1 = n1,
                       n2 = n2)
 
-K100_data <- which(ks == 100 & n_iters == 10000)
-F2data_K100 <- prep_f2(seg1 = res_files[[K100_data]]$seg1, 
-                       seg2 = res_files[[K100_data]]$seg2, 
-                       vseg1 = vseg1$K_100,
-                       vseg2 = vseg2$K_100,
-                       F1data = F1data_K100,
+K20_data <- which(ks == 20 & n_iters == 10000)
+F2data_K20 <- prep_f2(seg1 = res_files[[K20_data]]$seg1, 
+                       seg2 = res_files[[K20_data]]$seg2, 
+                       vseg1 = vseg1$K_20,
+                       vseg2 = vseg2$K_20,
+                       F1data = F1data_K20,
                        n1 = n1,
                        n2 = n2)
 
 
 F2data_K10$sum_tab$K <- "gamma * ' = 10'"
-F2data_K100$sum_tab$K <- "gamma * ' = 100'"
+F2data_K20$sum_tab$K <- "gamma * ' = 20'"
 F2data_K10$all_mcmc_sums$K <- "gamma * ' = 10'"
-F2data_K100$all_mcmc_sums$K <- "gamma * ' = 100'"
+F2data_K20$all_mcmc_sums$K <- "gamma * ' = 20'"
 F2data_K10$pi_tab$K <- "gamma * ' = 10'"
-F2data_K100$pi_tab$K <- "gamma * ' = 100'"
+F2data_K20$pi_tab$K <- "gamma * ' = 20'"
 
-F2data_sums <- rbind(F2data_K10$sum_tab, F2data_K100$sum_tab)
+F2data_sums <- rbind(F2data_K10$sum_tab, F2data_K20$sum_tab)
 F2data_sums$pop <- gsub("n", "N", F2data_sums$pop)
 F2data_sums$pop <- paste0("'", F2data_sums$pop, "'")
 
-F2data_mcmcs <- rbind(F2data_K10$all_mcmc_sums, F2data_K100$all_mcmc_sums)
+F2data_mcmcs <- rbind(F2data_K10$all_mcmc_sums, F2data_K20$all_mcmc_sums)
 F2data_mcmcs$pop <- gsub("n", "N", F2data_mcmcs$pop)
 F2data_mcmcs$pop <- paste0("'", F2data_mcmcs$pop, "'")
 
-F2data_pi <- rbind(F2data_K10$pi_tab, F2data_K100$pi_tab)
+F2data_pi <- rbind(F2data_K10$pi_tab, F2data_K20$pi_tab)
 F2data_pi$pop <- gsub("n", "N", F2data_pi$pop)
 F2data_pi$pop <- paste0("'", F2data_pi$pop, "'")
 
 
-f2 <- ggplot(F2data_mcmcs, aes(x = nseg)) +
-  geom_density() +
+F2data_mcmcs <- as.data.table(F2data_mcmcs)
+levs <- unique(F2data_mcmcs[,c("pop", "K")])
+F2data_densities <- vector("list", nrow(levs))
+
+for(i in 1:nrow(levs)){
+  d <- density(F2data_mcmcs[K == levs$K[i] & pop == levs$pop[i],]$nseg)
+  q <- quantile(F2data_mcmcs[K == levs$K[i] & pop == levs$pop[i],]$nseg, c(0.025,0.975))
+  F2data_densities[[i]] <- data.table(x = d$x, y = d$y, K = levs$K[i], pop = levs$pop[i])
+  F2data_densities[[i]]$quant <- factor(findInterval(F2data_densities[[i]]$x, q))
+}
+
+F2data_densities <- rbindlist(F2data_densities)
+
+f2 <- ggplot(F2data_densities, aes(x = x, y = y)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = 0, ymax = y, fill = quant), show.legend = FALSE) +
   geom_vline(data = F2data_sums, aes(xintercept = nseg), color = colors[1]) +
   geom_vline(data = F2data_pi, aes(xintercept = lower), linetype = "dashed", color = colors[2]) +
   geom_vline(data = F2data_pi, aes(xintercept = upper), linetype = "dashed", color = colors[2]) +
   facet_grid(K~pop, labeller = label_parsed) +
   theme_bw() +
   scale_y_continuous(expand = c(0,0)) +
+  scale_fill_manual(values = c("#004488", "#ffffff", "#004488")) +
   theme(axis.text = element_text(size = t.sizes[2]),
         axis.title = element_text(size = t.sizes[1]),
         strip.text = element_text(size = t.sizes[1]),
@@ -342,11 +368,12 @@ f2 <- ggplot(F2data_mcmcs, aes(x = nseg)) +
   xlab(bquote(italic(N[S]))) +
   ylab("Density")
 
-ggsave("Figure2.pdf", f2, height = 10, width = 15)
+ggsave("Figure3.pdf", f2, height = 10, width = 15)
 
 ```
 
-# Figure 3: var vs difference between estimate and mean of simulations for mcmc and k
+# Figure 2: var vs difference between estimate and mean of simulations for mcmc and k
+Note that the labels are flipped here, this produces figure 2
 
 ```{r Figure3}
 # for all of the mpseg files, figure out if the percentage of points in the CI changes
@@ -404,36 +431,39 @@ FS1 <- ggplot(ps_all_aggregate_for_K, aes(x = K, y = in_ci.mathematical*100)) +
   theme_bw() +
   # khroma::scale_color_batlow(discrete = TRUE, reverse = TRUE) +
   # khroma::scale_fill_batlow(discrete = TRUE, reverse = TRUE) +
-  theme(axis.text = element_text(size = t.sizes[2]),
-        axis.title = element_text(size = t.sizes[1]),
-        strip.text = element_text(size = t.sizes[1]),
+  theme(axis.text = element_text(size = t.sizes[2] - 2),
+        axis.title = element_text(size = t.sizes[1] - 2),
+        strip.text = element_text(size = t.sizes[1] - 2),
         strip.background = element_blank(),
-        legend.title = element_text(size = t.sizes[1]),
-        legend.text = element_text(size = t.sizes[2])) +
+        legend.title = element_text(size = t.sizes[1] - 2),
+        legend.text = element_text(size = t.sizes[2] - 2)) +
   xlab(parse(text = "gamma")) +
   ylab("% estimates in CI")
 
-# Figure S2: maf vs error rate
-ps_all_aggregate_for_af <- ps_all_merge[, lapply(.SD, mean), .SDcols = "in_ci.mathematical", by = .(af, iters, pop)]
-FS2 <- ggplot(ps_all_aggregate_for_af, aes(x = af, y = in_ci.mathematical*100)) +
-  geom_point() +
-  geom_smooth(method = "lm", se = FALSE) +
-  facet_grid(iters~pop) +
-  theme_bw() +
-  # khroma::scale_color_batlow(discrete = TRUE, reverse = TRUE) +
-  # khroma::scale_fill_batlow(discrete = TRUE, reverse = TRUE) +
-  theme(axis.text = element_text(size = t.sizes[2]),
-        axis.title = element_text(size = t.sizes[1]),
-        strip.text = element_text(size = t.sizes[1]),
-        strip.background = element_blank(),
-        legend.title = element_text(size = t.sizes[1]),
-        legend.text = element_text(size = t.sizes[2])) +
-  xlab("Minor Allele Frequency") +
-  ylab("% estimates in CI")
+save_plot("FigureS1.pdf", FS1, base_height = 10, base_width = 15)
 
+# # Figure S2: maf vs error rate
+# ps_all_aggregate_for_af <- ps_all_merge[, lapply(.SD, mean), .SDcols = "in_ci.mathematical", by = .(af, iters, pop)]
+# FS2 <- ggplot(ps_all_aggregate_for_af, aes(x = af, y = in_ci.mathematical*100)) +
+#   geom_point() +
+#   geom_smooth(method = "lm", se = FALSE) +
+#   facet_grid(iters~pop) +
+#   theme_bw() +
+#   # khroma::scale_color_batlow(discrete = TRUE, reverse = TRUE) +
+#   # khroma::scale_fill_batlow(discrete = TRUE, reverse = TRUE) +
+#   theme(axis.text = element_text(size = t.sizes[2]),
+#         axis.title = element_text(size = t.sizes[1]),
+#         strip.text = element_text(size = t.sizes[1]),
+#         strip.background = element_blank(),
+#         legend.title = element_text(size = t.sizes[1]),
+#         legend.text = element_text(size = t.sizes[2])) +
+#   xlab("Minor Allele Frequency") +
+#   ylab("% estimates in CI")
 
-f3a <- ggplot(ps_all_merge, aes(x = K, y = diff, color = in_ci.mathematical)) +
-  geom_point() +
+ps_all_merge[,in_ci.mathematical := ifelse(in_ci.mathematical, "Yes", "No")]
+ps_all_merge[,in_ci.mathematical := factor(in_ci.mathematical, c("Yes", "No"))]
+f3a <- ggplot(ps_all_merge, aes(x = K, y = diff, color = in_ci.mathematical, group = in_ci.mathematical)) +
+  geom_point(position = position_dodge(4)) +
   theme_bw() +
   facet_grid(~pop) +
   khroma::scale_color_highcontrast() +
@@ -445,40 +475,41 @@ f3a <- ggplot(ps_all_merge, aes(x = K, y = diff, color = in_ci.mathematical)) +
         legend.title = element_text(size = t.sizes[1]),
         legend.text = element_text(size = t.sizes[2])) +
   xlab(parse(text = "gamma")) +
-  ylab(bquote(italic(P*"("*S[jq]*")"[E]) - italic(P*"("*S[jq]*")"[O]))) +
+  ylab(bquote(italic(hat(P)*"("*S[jq]*")") - italic(P*"("*S[jq]*")"))) +
   guides(color = guide_legend(title = "In 95% CI"))
 
-f3b <- ggplot(ps_all_merge, aes(x = af, y = diff, color = in_ci.mathematical)) +
-  geom_point() +
+f3b <- ggplot(mapping = aes(x = af, y = diff, color = in_ci.mathematical)) +
+  geom_point(data = ps_all_merge[in_ci.mathematical == "Yes",]) +
+  geom_point(data = ps_all_merge[in_ci.mathematical == "No",]) +
   theme_bw() +
   facet_grid(~pop) +
   khroma::scale_color_highcontrast() +
   theme(axis.text = element_text(size = t.sizes[2]),
         axis.title = element_text(size = t.sizes[1]),
-        strip.text = element_text(size = t.sizes[1]),
+        strip.text = element_blank(),
         axis.text.x = element_text(size = t.sizes[2], angle = 90, vjust = .5),
         strip.background = element_blank(),
         legend.title = element_text(size = t.sizes[1]),
         legend.text = element_text(size = t.sizes[2])) +
   xlab("Minor Allele Frequency") +
-  ylab(bquote(italic(P*"("*S[jq]*")"[E]) - italic(P*"("*S[jq]*")"[O])))
+  ylab(bquote(italic(hat(P)*"("*S[jq]*")") - italic(P*"("*S[jq]*")")))
 
-f3c <- ggplot(ps_all_merge, aes(x = iters, y = diff, color = in_ci.mathematical)) +
-  geom_point() +
+f3c <- ggplot(ps_all_merge, aes(x = iters, y = diff, color = in_ci.mathematical, group = in_ci.mathematical)) +
+  geom_point(position = position_dodge(400)) +
   theme_bw() +
   facet_grid(~pop) +
   khroma::scale_color_highcontrast() +
   scale_x_continuous(breaks = mcmcs) +
   theme(axis.text = element_text(size = t.sizes[2]),
         axis.title = element_text(size = t.sizes[1]),
-        strip.text = element_text(size = t.sizes[1]),
+        strip.text = element_blank(),
         axis.text.x = element_text(size = t.sizes[2], 
                                    angle = 90, vjust = .5),
         strip.background = element_blank(),
         legend.title = element_text(size = t.sizes[1]),
         legend.text = element_text(size = t.sizes[2])) +
   xlab("Number of Simulated Draws") +
-  ylab(bquote(italic(P*"("*S[jq]*")"[E]) - italic(P*"("*S[jq]*")"[O])))
+  ylab(bquote(italic(hat(P)*"("*S[jq]*")") - italic(P*"("*S[jq]*")")))
 
 f3l <- ggpubr::get_legend(f3a)
 f3 <- plot_grid(f3a + guides(color = "none"), 
@@ -490,7 +521,7 @@ f3 <- plot_grid(f3a + guides(color = "none"),
 
 f3 <- plot_grid(f3, f3l, nrow = 1, rel_widths = c(1, .2))
 
-save_plot("Figure3.pdf", f3, base_height = 11, base_width = 15)
+save_plot("Figure2.pdf", f3, base_height = 11, base_width = 15)
 ```
 # Figure 4 Nseg vs parameters
 
@@ -501,12 +532,15 @@ ns_all$diff <- ns_all$ENs - ns_all$nseg
 
 f4a <- ggplot(ns_all[iters == 10000,], aes(x = K, y = nseg)) +
   geom_errorbar(data = unique(ns_all[iters == 10000, c("pop", "K", "iters", "i", "lower", "upper")]),
-            aes(x = K, ymin = lower, ymax = upper), color = "#DDAA33", size = 1, 
-            position = position_nudge(x = 3.5),
+            aes(x = K + 3.7, ymin = lower, ymax = upper), color = "#DDAA33", size = 1,
             inherit.aes = FALSE, width = 2) +
-  stat_ydensity(aes(group = K), draw_quantiles = c(.025, .975), scale = "width", bw = .4,
+  geom_point(data = unique(ns_all[iters == 10000, c("pop", "K", "iters", "i", "lower", "upper", "ENs")]),
+             aes(x = K + 3.7, y = ENs), color = "#DDAA33", size = 7, shape = 45,
+            inherit.aes = FALSE) +
+  stat_ydensity(aes(group = K), draw_quantiles = c(.025, .5, .975), scale = "width", bw = .4,
                 fill = NA, width = 6) +
   facet_wrap(~pop) +
+  scale_y_continuous(breaks = seq(40, 100, by = 10), limits = c(40, 100)) +
   theme_bw() + 
   scale_x_continuous(breaks = k) +
   theme(axis.text = element_text(size = t.sizes[2]),
@@ -515,70 +549,74 @@ f4a <- ggplot(ns_all[iters == 10000,], aes(x = K, y = nseg)) +
         strip.text = element_text(size = t.sizes[1]),
         strip.background = element_blank(),
         legend.text = element_text(size = t.sizes[2])) +
-  ylab(bquote(italic(E*"("*N[S]*")") - italic(N[S,observed]))) +
+  ylab(bquote(italic(N[S]))) +
   xlab(bquote(gamma))
 
 f4b <- ggplot(ns_all[K == 50,], aes(x = iters, y = nseg)) +
   geom_errorbar(data = unique(ns_all[K == 50,c("pop", "K", "iters", "i", "lower", "upper")]),
-            aes(x = iters, ymin = lower, ymax = upper), color = "#DDAA33", size = 1, 
-            position = position_nudge(x = 350),
+            aes(x = iters + 370, ymin = lower, ymax = upper), color = "#DDAA33", size = 1,
             inherit.aes = FALSE, width = 200) +
-  stat_ydensity(aes(group = iters), draw_quantiles = c(.025, .975), scale = "width", bw = .4,
+  geom_point(data = unique(ns_all[K == 50, c("pop", "K", "iters", "i", "lower", "upper", "ENs")]),
+             aes(x = iters + 370, y = ENs), color = "#DDAA33", size = 7, shape = 45,
+            inherit.aes = FALSE) +
+  stat_ydensity(aes(group = iters), draw_quantiles = c(.025, .5, .975), scale = "width", bw = .4,
                 fill = NA, width = 600) +
   facet_wrap(~pop) +
   theme_bw() + 
+  scale_y_continuous(breaks = seq(40, 100, by = 5), limits = c(80, 100)) +
   scale_x_continuous(breaks = mcmcs) +
   theme(axis.text = element_text(size = t.sizes[2]),
         axis.title = element_text(size = t.sizes[1]),
         legend.title = element_text(size = t.sizes[1]),
-        strip.text = element_text(size = t.sizes[1]),
+        axis.text.x = element_text(size = t.sizes[2], angle = 90, vjust = .5),
+        strip.text = element_blank(),
         strip.background = element_blank(),
         legend.text = element_text(size = t.sizes[2])) +
-  ylab(bquote(italic(E*"("*N[S]*")") - italic(N[S,observed]))) +
+  ylab(bquote(italic(N[S]))) +
   xlab("Number of Simulated Draws")
 
-
-```
-
-
-```{r}
+f4 <- plot_grid(f4a, f4b, ncol = 1, axis = "l", align = "l")
+save_plot("Figure4.pdf", f4, base_height = 11, base_width = 15)
 
 
+# S2
+ns_all_agg <- ns_all[,lapply(.SD,mean), .SDcols = "nseg", by = c("ENs", "pop", "K", "iters", "i")]
+levs <- paste0("Sims = ", sort(unique(ns_all_agg$iters)))
+ns_all_agg$iters <- factor(paste0("Sims = ", ns_all_agg$iters), levels = levs)
+ns_all_agg$pop <- gsub("n", "N", ns_all_agg$pop)
+ns_all_agg$stat <- "Mean"
 
 
-#===============plot all of the observed values vs the estimated value for the sums=============
-# plot the estimated prediction interval vs the observations and the confint from the simultations
+ns_all_agg_med <- ns_all[,lapply(.SD,median), .SDcols = "nseg", by = c("ENs", "pop", "K", "iters", "i")]
+levs <- paste0("Sims = ", sort(unique(ns_all_agg_med$iters)))
+ns_all_agg_med$iters <- factor(paste0("Sims = ", ns_all_agg_med$iters), levels = levs)
+ns_all_agg_med$pop <- gsub("n", "N", ns_all_agg_med$pop)
+ns_all_agg_med$stat <- "Median"
 
-
-
-
-#==========others==================
-
-# variances, per locus
-vars <- rbind(cbind.data.frame(estimated = vseg1, 
-                               observed = matrixStats::rowVars(seg1),
-                               pop = paste0("n = ", n1/2),
-                               af = allele_frequencies),
-              cbind.data.frame(estimated = vseg2, 
-                               observed = matrixStats::rowVars(seg2),
-                               pop = paste0("n = ", n2/2),
-                               af = allele_frequencies))
-ggplot(vars, aes(x = observed, y = estimated, color = af)) +
+ns_all_agg <- rbind(ns_all_agg, ns_all_agg_med)
+FS2 <- ggplot(ns_all_agg, aes(x = K, y = ENs - nseg, color = pop)) +
   geom_point() +
-  geom_abline(intercept = 0, slope = 1) +
-  facet_wrap(~pop) +
+  facet_grid(stat~iters) +
+  khroma::scale_color_highcontrast() +
+  geom_hline(yintercept = 0) +
   theme_bw() +
-  khroma::scale_color_batlow()
+  theme(axis.text = element_text(size = t.sizes[2]),
+        axis.title = element_text(size = t.sizes[1]),
+        legend.title = element_text(size = t.sizes[1]),
+        axis.text.x = element_text(size = t.sizes[2], angle = 90, vjust = .5),
+        strip.background = element_blank(),
+        strip.text = element_text(size = t.sizes[1]),
+        legend.text = element_text(size = t.sizes[2])) +
+  ylab(bquote(italic(E(N[S])) * " - " * italic(N[S,observed]))) +
+  xlab(bquote(gamma)) +
+  guides(color = guide_legend(title = "Population"))
 
-# variances, overall
-overall_vars <- rbind(cbind.data.frame(estimated = sum(vseg1),
-                                       observed = var(msum1),
-                                       pop = paste0("n = ", n1/2)),
-                      cbind.data.frame(estimated = sum(vseg2),
-                                       observed = var(msum2),
-                                       pop = paste0("n = ", n2/2)))
+
+
+save_plot("FigureS2.pdf", FS2, base_height = 10, base_width = 15)
+
+
 ```
-
 
 ```{r}
 # show difference in HWE divergence with different combinations of 5 minor alleles in 100 genotypes
