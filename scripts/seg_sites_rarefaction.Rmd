@@ -111,10 +111,10 @@ p2 <- lapply(pseg2, function(p) sum(p)/nal)
 
 
 # Rarefact via simulations
-Note: this chunck should run on a cluster or somewhere else allowing for large numbers of threads, then be re-imported in the next chunck. `q` should be passed as an argument for the iteration, as should `outfile`.
+Note: this chunk should run on a cluster or somewhere else allowing for large numbers of threads, then be re-imported in the next chunk. `q` should be passed as an argument for the iteration, as should `outfile`.
 
 ```{r cluster_MCMCs, eval=FALSE}
-set.seed(seed + q) # reset seed for cluster
+# set.seed(seed + q) # reset seed for cluster
 
 rarefact_mcmc <- function(g, k){
   if(length(k) > 1){
@@ -133,31 +133,31 @@ rarefact_mcmc <- function(g, k){
   return(seg)
 }
 
-# draw for each k/mcmc count combination
-combs <- expand.grid(k, mcmcs)
-colnames(combs) <- c("k", "iters")
-
-tmcmcs <- combs$iters[q]
-tk <- combs$k[q]
-
-seg1 <- seg2 <- matrix(0, nal, tmcmcs)
-for(i in 1:tmcmcs){
-  for(j in 1:nal){
-    seg1[j,i] <- rarefact_mcmc(g1[j,], k = tk)
-    seg2[j,i] <- rarefact_mcmc(g2[j,], k = tk)
-  }
-}
-
-mpseg1 <- binom::binom.confint(rowSums(seg1), rep(tmcmcs, nrow(seg1)),
-                               method = "agresti-coull")[,c("mean", "lower", "upper")]
-mpseg2 <- binom::binom.confint(rowSums(seg2), rep(tmcmcs, nrow(seg1)),
-                               method = "agresti-coull")[,c("mean", "lower", "upper")]
-
-colnames(mpseg1) <- colnames(mpseg2) <- c("mean", "lower", "upper")
-
-res <- list(seg1 = seg1, seg2 = seg2, mpseg1 = mpseg1, mpseg2 = mpseg2, k = tk, iters = tmcmcs)
-
-saveRDS(res, paste0(outfile, "_", q, ".RDS"))
+# # draw for each k/mcmc count combination
+# combs <- expand.grid(k, mcmcs)
+# colnames(combs) <- c("k", "iters")
+# 
+# tmcmcs <- combs$iters[q]
+# tk <- combs$k[q]
+# 
+# seg1 <- seg2 <- matrix(0, nal, tmcmcs)
+# for(i in 1:tmcmcs){
+#   for(j in 1:nal){
+#     seg1[j,i] <- rarefact_mcmc(g1[j,], k = tk)
+#     seg2[j,i] <- rarefact_mcmc(g2[j,], k = tk)
+#   }
+# }
+# 
+# mpseg1 <- binom::binom.confint(rowSums(seg1), rep(tmcmcs, nrow(seg1)),
+#                                method = "agresti-coull")[,c("mean", "lower", "upper")]
+# mpseg2 <- binom::binom.confint(rowSums(seg2), rep(tmcmcs, nrow(seg1)),
+#                                method = "agresti-coull")[,c("mean", "lower", "upper")]
+# 
+# colnames(mpseg1) <- colnames(mpseg2) <- c("mean", "lower", "upper")
+# 
+# res <- list(seg1 = seg1, seg2 = seg2, mpseg1 = mpseg1, mpseg2 = mpseg2, k = tk, iters = tmcmcs)
+# 
+# saveRDS(res, paste0(outfile, "_", q, ".RDS"))
 
 ```
 
@@ -631,5 +631,63 @@ exc <- counts(exd)
 rarefact(exc, 10)
 ```
 
+#========real data example, mathematically============
 
+```{r}
+library(snpR)
+set.seed(12321)
+d <- readRDS("../data/monarchs_non_strict.RDS")
+d <- d[sample(nrow(d), 1000),] # subsample 1k loci
+
+# remove smaller than 10, although it works fine including stuff like SAI with only 4
+sample.meta(d)$pop[sample.meta(d)$pop %in% c("ENA", "WNA")] <- "NAM"
+ps <- summarize_facets(d, "pop")$pop
+d <- d[pop = -c(names(ps)[which(ps < 10)])]
+
+d <- calc_seg_sites(d, "pop", g = 0) # set gamma to the smallest N per loci
+seg_res_mon <- get.snpR.stats(d, "pop", "seg_sites") # follows biogeographic history
+```
+
+#=========real data example, via rarefaction==========
+```{r}
+# setup
+sn <- format_snps(d, "sn", interpolate = FALSE)
+sn <- sn[,-c(1:7)]
+tmcmcs <- 100
+
+pops <- substr(colnames(sn), 1, 3)
+upops <- unique(pops)
+mon_seg <- array(0, c(nrow(sn), tmcmcs, length(unique(pops))))
+
+# do the rarefaction
+for(i in 1:tmcmcs){
+  cat("\nIter:", i)
+  for(j in 1:nrow(sn)){
+    # cat("\n\t", j)
+    tg <- min(tapply(unlist(sn[j,]), pops, function(x) sum(!is.na(x)))) # set gamma for this locus
+    for(k in 1:length(upops)){
+      mon_seg[j,i,k] <- rarefact_mcmc(sn[j,which(pops == upops[k])], k = tg) # rarefact this locus in this pop
+    }
+  }
+}
+
+# summarize results
+mon_rare_res <- matrix(0, tmcmcs, length(upops))
+for(k in 1:length(upops)){
+  mon_rare_res[,k] <- colSums(mon_seg[,,k])
+}
+colnames(mon_rare_res) <- upops
+mon_rare_res <- as.data.table(mon_rare_res)
+mon_rare_res$i <- 1:tmcmcs
+mon_rare_res <- melt(mon_rare_res, id.vars = "i", variable.name = "pop", value = "Ns")
+
+ggplot(mon_rare_res, aes(x = pop, y = Ns)) +
+  geom_boxplot() +
+  geom_point(alpha = .2, position = position_jitter(height = 0, width = .2)) +
+  geom_point(data = seg_res_mon$weighted.means, aes(x = subfacet, y = seg_sites), color = "red") +
+  theme_bw() +
+  ylab(bquote(italic(N[s]))) +
+  xlab("Population")
+
+```
 
