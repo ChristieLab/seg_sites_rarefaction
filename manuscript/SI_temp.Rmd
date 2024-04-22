@@ -1,0 +1,58 @@
+---
+title: "Untitled"
+output:
+  word_document: default
+  html_document: default
+date: "2024-04-09"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval=FALSE)
+```
+
+Install:
+
+```{r, eval=FALSE}
+install.packages("remotes")
+remotes::install_github("hemstrow/snpR")
+```
+
+load
+```{r}
+library(snpR)
+```
+
+
+download
+
+```{r}
+# download the metadata
+meta <- read.table(url("https://raw.githubusercontent.com/hemstrow/seg_sites_rarefaction/main/data/example_metadata.txt"), 
+                   header = TRUE)
+
+# download the vcf
+download.file("https://raw.githubusercontent.com/hemstrow/seg_sites_rarefaction/main/data/example_vcf.vcf", 
+              destfile = "example_vcf.vcf")
+```
+
+read in
+```{r}
+monarchs <- read_vcf("example_vcf.vcf", sample.meta = meta)
+```
+
+types
+```{r}
+summarize_facets(monarchs, "pop")
+monarchs <- calc_seg_sites(monarchs, "pop", g = 0)
+get.snpR.stats(monarchs, "pop", "seg_sites")$weighted.means
+
+monarchs <- calc_seg_sites(monarchs, "pop", g = -1)
+get.snpR.stats(monarchs, "pop", "seg_sites")$weighted.means
+
+monarchs <- calc_seg_sites(monarchs, "pop", g = 10)
+get.snpR.stats(monarchs, "pop", "seg_sites")$weighted.means
+
+monarchs <- calc_seg_sites(monarchs, "pop", g = 0)
+head(get.snpR.stats(monarchs, "pop", "seg_sites")$single, 10)
+```
+

@@ -1,0 +1,273 @@
+% Options for packages loaded elsewhere
+\PassOptionsToPackage{unicode}{hyperref}
+\PassOptionsToPackage{hyphens}{url}
+%
+\documentclass[
+  12pt,
+]{article}
+\usepackage{amsmath,amssymb}
+\usepackage{iftex}
+\ifPDFTeX
+  \usepackage[T1]{fontenc}
+  \usepackage[utf8]{inputenc}
+  \usepackage{textcomp} % provide euro and other symbols
+\else % if luatex or xetex
+  \usepackage{unicode-math} % this also loads fontspec
+  \defaultfontfeatures{Scale=MatchLowercase}
+  \defaultfontfeatures[\rmfamily]{Ligatures=TeX,Scale=1}
+\fi
+\usepackage{lmodern}
+\ifPDFTeX\else
+  % xetex/luatex font selection
+  \setsansfont[]{Times New Roman}
+\fi
+% Use upquote if available, for straight quotes in verbatim environments
+\IfFileExists{upquote.sty}{\usepackage{upquote}}{}
+\IfFileExists{microtype.sty}{% use microtype if available
+  \usepackage[]{microtype}
+  \UseMicrotypeSet[protrusion]{basicmath} % disable protrusion for tt fonts
+}{}
+\usepackage{xcolor}
+\usepackage[margin=1in]{geometry}
+\usepackage{graphicx}
+\makeatletter
+\def\maxwidth{\ifdim\Gin@nat@width>\linewidth\linewidth\else\Gin@nat@width\fi}
+\def\maxheight{\ifdim\Gin@nat@height>\textheight\textheight\else\Gin@nat@height\fi}
+\makeatother
+% Scale images if necessary, so that they will not overflow the page
+% margins by default, and it is still possible to overwrite the defaults
+% using explicit options in \includegraphics[width, height, ...]{}
+\setkeys{Gin}{width=\maxwidth,height=\maxheight,keepaspectratio}
+% Set default figure placement to htbp
+\makeatletter
+\def\fps@figure{htbp}
+\makeatother
+\setlength{\emergencystretch}{3em} % prevent overfull lines
+\providecommand{\tightlist}{%
+  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+\setcounter{secnumdepth}{-\maxdimen} % remove section numbering
+\newlength{\cslhangindent}
+\setlength{\cslhangindent}{1.5em}
+\newlength{\csllabelwidth}
+\setlength{\csllabelwidth}{3em}
+\newlength{\cslentryspacingunit} % times entry-spacing
+\setlength{\cslentryspacingunit}{\parskip}
+\newenvironment{CSLReferences}[2] % #1 hanging-ident, #2 entry spacing
+ {% don't indent paragraphs
+  \setlength{\parindent}{0pt}
+  % turn on hanging indent if param 1 is 1
+  \ifodd #1
+  \let\oldpar\par
+  \def\par{\hangindent=\cslhangindent\oldpar}
+  \fi
+  % set entry spacing
+  \setlength{\parskip}{#2\cslentryspacingunit}
+ }%
+ {}
+\usepackage{calc}
+\newcommand{\CSLBlock}[1]{#1\hfill\break}
+\newcommand{\CSLLeftMargin}[1]{\parbox[t]{\csllabelwidth}{#1}}
+\newcommand{\CSLRightInline}[1]{\parbox[t]{\linewidth - \csllabelwidth}{#1}\break}
+\newcommand{\CSLIndent}[1]{\hspace{\cslhangindent}#1}
+\usepackage[left]{lineno}
+\linenumbers
+\usepackage{setspace}\doublespacing
+\usepackage{sectsty}\sectionfont{\fontsize{12}{12}\selectfont}
+\usepackage{sectsty}\subsectionfont{\normalfont\itshape\fontsize{12}{12}\selectfont}
+\usepackage[round]{natbib}
+\usepackage{amsmath}
+\ifLuaTeX
+  \usepackage{selnolig}  % disable illegal ligatures
+\fi
+\IfFileExists{bookmark.sty}{\usepackage{bookmark}}{\usepackage{hyperref}}
+\IfFileExists{xurl.sty}{\usepackage{xurl}}{} % add URL line breaks if available
+\urlstyle{same}
+\hypersetup{
+  pdftitle={manuscript},
+  hidelinks,
+  pdfcreator={LaTeX via pandoc}}
+
+\title{manuscript}
+\author{}
+\date{\vspace{-2.5em}31 October 2023}
+
+\begin{document}
+\maketitle
+
+\hypertarget{abstract}{%
+\section{Abstract}\label{abstract}}
+
+\hypertarget{introduction}{%
+\section{Introduction}\label{introduction}}
+
+\hypertarget{methods}{%
+\section{Methods}\label{methods}}
+
+\hypertarget{probability-of-observing-segregating-loci-via-rarefaction}{%
+\subsection{Probability of observing segregating loci via
+rarefaction}\label{probability-of-observing-segregating-loci-via-rarefaction}}
+
+Rarefaction can be used to estimate the probability of observing a
+segregating site at a specific locus using much the same framework used
+to calculate allelic richness. In brief, allelic richness (or the
+expected number of distinct alleles expected at a given locus under a
+common sample size \(g\) across populations) can be estimated for a
+given population \(j\) by summing the probability of observing each
+\(i\) of \(m\) unique alleles using the counts of those alleles in the
+population \(N_{ij}\) and the total sample size in that population
+\(N_{j}\). This is done by comparing the number of possible ways to draw
+\(g\) gene copies without sampling allele \(i\)
+(\(\binom{N_{j} - N_{ij}}{g}\)) to the total number of possible
+combinations of gene copies that can be drawn (\(\binom{N_{j}}{g}\));
+the inverse of this
+(\(1 - \frac{\binom{N_{j} - N_{ij}}{g}}{\binom{N_{j}}{g}}\)) is
+therefore the probability of observing allele \(i\) in population
+\(N_{j}\), and the sum of this value across all \(m\) alleles gives the
+expected number of alleles observed at a locus in population \(j\),
+\(\alpha_{g}^{j}\) (\textbf{hurlbertNonconceptSpeciesDiversity1971?};
+\textbf{kalinowskiCountingAllelesRarefaction2004?}):
+
+\begin{equation}
+\alpha_{g}^{j} = \sum_{i = 1}^{m} 1 - \frac{\binom{N_{j} - N_{ij}}{g}}{\binom{N_{j}}{g}}
+\end{equation}
+
+The expected number of segregating loci in a population for a draw of
+\(g\) gene copies can be derived similarly. For a locus \(i\) to be
+segregating in population \(j\), all alleles drawn across all gene
+copies must be identical. If alleles are independent at each locus (the
+locus is at Hardy-Weinburg Equlibrium, HWE) and \(N\) is infinite, the
+probability (\(P({S_{j}})\)) of observing a segregating site at a locus
+is the inverse of the probability of drawing only one allele in \(g\)
+draws with replacement: \[P({S_{j}}) = 1 - \sum_{i = 1}^{m} f_{ij}^{g}\]
+
+where \(f_{ij}\) is the allele frequency of allele \(i\) in population
+\(j\). However, in finite samples draws are conducted with replacement,
+and so binomial coefficients must instead be used to determine the
+probability of drawing only a specific allele:
+\[P({S_{j}}) = 1 - \sum_{i = 1}^{m} \frac{\binom{N_{ij}}{g}}{\binom{N_{j}}{g}}\]
+
+However, HWE is often not a desirable assumption to make. Even if
+filtering is employed to remove loci which do not conform to HWE, the
+degree of conformity, and thus the degree of statistical bias in
+estimating \(P({S_{j}})\), typically varies somewhat between
+populations. For example, in a sample of 100 genotypes with a minor
+allele frequency of 0.05, only five minor alleles are expected and two
+out of three possible combinations of minor homozygotes and
+heterozygotes that produce that frequency will not deviate from HWE at
+\(\alpha = 0.05\) according to an exact test (Wigginton et al., 2005).
+However, re-sampling these to, say, ten genoytpes should will produce
+quite different \(P(S_{j})\) (roughly 0.7, 0.6, and 0.5, for purely
+heterozygotes, one homozygote and three heterozygotes, and two
+homozygotes and one heterozygote, respectively) as we will see below.
+
+To remedy these problems, I propose the following estimator of
+\(P({S_{j}})\):
+\[P({S_{j}}) = 1 - \sum_{k = 1}^{h}\frac{\binom{n_{kj}}{\gamma}}{\binom{n_{j}}{\gamma}}\]
+where the \(P({S_{j}})\) is given by the probability of exclusively
+drawing any \(k\) of \(h\) possible homozygote genotypes in population
+\(j\) given \(\gamma\) independent sampled \emph{genotypes} (not
+\emph{gene copies}) from the pool of observed genotypes. Here,
+\(n_{kj}\) is the number of observed homozygote genotypes of type \(k\)
+in population \(j\) and \(n_{j}\) is the total number of observed
+genotypes of all types. Note that \(n_{j}\) and \(\gamma\) will be half
+the value of their equivalents \(N_{j}\) and \(g\) for diploid species,
+one third for triploids, and so on.
+
+Interestingly, this method, like the richness method and related private
+allele rarefaction approaches can smoothly account for varying amounts
+of missing data at specific loci in different populations by varying
+\(g\) or \(\gamma\) across loci. Both can be set to one less than the
+smallest observed \(N_{j}\) or \(n_{j}\), the highest values at which
+rarefaction can be applied within a population, across all populations
+after accounting for missing data, and can thus vary across loci without
+bias. Setting either value to \(N_{j}\) or \(n_{j}\) will instead return
+the observed allele diversity or segregating site status, respectively.
+
+This is particularly useful given that \(E(N_{S})\) or the expected
+total number of segregating sites, is often of specific interest as a
+measure of genetic diversity when comparing populations. Given that the
+expected number of segregating sites at a specific locus \(q\) in
+population \(j\), \(E(N_{S_{jq}})\), is equal to \(P({S_{jq}})\),
+\(E(N_{S})\) can be calculated by summing \(P({S_{jq}})\) across all
+\(Q\) loci: \[E(N_{S}) = \sum_{q = 1}^{Q} P({S_{jq}})\] with \(\gamma\)
+set accordingly for each locus. In this case,
+\(0 \le E(N_{S_{jq}}) \le 1\) for all loci (and thus
+\(0 \le E(N_{S}) \le Q\)).
+
+Usefully, under this framework each locus represents a single Bernoulli
+trial in which it can be observed to be segregating or not with
+probability \(P({S_{jq}})\). As such, the variance of \(P({S_{jq}})\)
+for each locus is given by
+\[\sigma_{P(S_{jq})}^{2} = P(S_{jq}) \times (1 - P(S_{jq}))\] and, if
+each locus is independent, the variance of \(E(N_{S})\) is equal to the
+sum of \(\sigma_{P(S_{jq})}^{2}\) across all loci:
+\[\sigma_{E(n_{S})}^{2} = \sum_{q = 1}^{Q}\sigma_{P(S_{jq})}^{2}\]
+
+Confidence and prediction intervals can then be derived using standard
+approaches for the sum of random, independent Bernoulli trials. When
+\(Q\) is large, for example, the distribution of \(E(N_{S})\) should be
+approach normal and confidence and prediction intervals can be derived
+using standard normal approximation using the equations
+\[CI_{N_{S}} = E(N_{S}) \pm Z\sqrt{\frac{\sigma_{E(n_{S})}^{2}}{Q}}\]
+and \[PI_{N_{S}} = E(N_{S}) \pm Z\sqrt{\sigma_{E(n_{S})}^{2}(1+(1/Q))}\]
+where \(Z\) is given by the normal quantile function
+\(Z = Q_{X}(1-\alpha)\) with \(\mu = 0\) and \(\sigma = 1\) for a
+desired confidence level \(\alpha\).
+
+\hypertarget{emperical-validation}{%
+\subsection{Emperical Validation}\label{emperical-validation}}
+
+To validate equations 4 and 5, I simulated genotypic data for two
+populations with sizes 100 and 1000, each with 100 bi-allelic loci with
+minor allele frequencies spaced equally between 0.01 and 0.1. I added
+missing data to each population assigning each locus a missing data rate
+\(R_{mq}\) from a uniform distribution such that
+\(R_{mq} \sim U(0,.3)\), ensuring that overall allele frequencies in
+each population were maintained. I then used the methods described above
+to estimate \(P({S_{jq}})\) and \(E(N_{S})\) and their variances given
+\(\gamma = 30\). For comparison, I also conducted 10,000 random draws of
+size \(\gamma\) from each loci in each population, then calculated
+\(P({S_{jq}})\) and its variance for each locus empirically and
+\(E(N_{S})\) by summing across all 100 loci for each set of draws. I
+likewise calculated the variance of \(N_{S}\) directly across all sets
+of random draws.
+
+To compare my calculated estimates to the empirical simulations, I used
+the ``exact'' method from the R package \texttt{binom}
+(\textbf{rajBinomBinomialConfidence2022?}) to calculate 95\% confidence
+intervals for each empirical \(P({S_{jq}})\). I also used normal
+approximation to calculate 95\% confidence and prediction intervals for
+\(E(N_{S})\) and \(N_{S}\) using \(\sigma_{E(n_{S})}^{2}\) and the
+variance directly observed from the simulations, respectively.
+
+\hypertarget{results}{%
+\section{Results}\label{results}}
+
+The methods described here for calculating \(P({S_{j}})\) and
+\(E(N_{S})\) performed well. Individual \(P({S_{jq}})\) values for each
+locus were within the confidence intervals derived from the simulated
+values for 97 and 96\% of loci from the \(n = 100\) and \(n = 1000\)
+populations, respectively (Figure 1). Note that variation along the
+generally correlated minor allele frequency/\(P({S_{jq}})\) axes is due
+to variations in genotype frequencies in the simulated data for a given
+minor allele frequency. \(P({S_{jq}})\) values estimated using equation
+X account for this adequately.
+
+\(E(N_{S})\) values estimated with equation X were similarly accurate
+and were within the 95\% confidence intervals produced using the
+simulated \(N_{S}\) for both population sizes. Likewise, the 95\%
+prediction intervals calculated using \(\sigma_{E(n_{S})}^{2}\) via
+equation X contained 96.1 and 95.3\% of the simulated \(N_{S}\) values
+for \(n = 100\) and \(n = 1000\), respectively.
+
+\hypertarget{refs}{}
+\begin{CSLReferences}{1}{0}
+\leavevmode\vadjust pre{\hypertarget{ref-Wigginton2005}{}}%
+Wigginton, J. E., Cutler, D. J., \& Abecasis, G. R. (2005). A {Note} on
+{Exact} {Tests} of {Hardy}-{Weinberg} {Equilibrium}. \emph{The American
+Journal of Human Genetics}, \emph{76}(5), 887--893.
+https://doi.org/\url{https://doi.org/10.1086/429864}
+
+\end{CSLReferences}
+
+\end{document}

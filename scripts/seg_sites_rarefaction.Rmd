@@ -113,7 +113,7 @@ p2 <- lapply(pseg2, function(p) sum(p)/nal)
 # Rarefact via simulations
 Note: this chunk should run on a cluster or somewhere else allowing for large numbers of threads, then be re-imported in the next chunk. `q` should be passed as an argument for the iteration, as should `outfile`.
 
-```{r cluster_MCMCs, eval=FALSE}
+```{r cluster_MCMCs}
 # set.seed(seed + q) # reset seed for cluster
 
 rarefact_mcmc <- function(g, k){
@@ -163,7 +163,7 @@ rarefact_mcmc <- function(g, k){
 
 # import and condense simulation results
 ```{r}
-res_files <- list.files("../data/", "\\.RDS", full.names = TRUE)
+res_files <- list.files("../data/", "mcmc.+\\.RDS", full.names = TRUE)
 res_files <- lapply(res_files, readRDS)
 ks <- unlist(purrr::map(res_files, "k"))
 n_iters <- unlist(purrr::map(res_files, "iters"))
@@ -175,8 +175,8 @@ n_iters <- unlist(purrr::map(res_files, "iters"))
 
 ```{r Figure1}
 prep_f1 <- function(pseg1, pseg2, mpseg1, mpseg2, n1, n2){
-  #========plot the emperical CIs around every loci vs the predicted value==============
-  # plotting the emperical CIs vs the estiamted mean
+  #========plot the empirical CIs around every loci vs the predicted value==============
+  # plotting the empirical CIs vs the estimated mean
   pseg <- rbind(data.frame(pop = paste0("N = ", n1/2), p = pseg1, snp = 1:nal, af = allele_frequencies),
                 data.frame(pop = paste0("N = ", n2/2), p = pseg2, snp = 1:nal, af = allele_frequencies))
   
@@ -372,7 +372,7 @@ ggsave("Figure3.pdf", f2, height = 10, width = 15)
 
 ```
 
-# Figure 2: var vs difference between estimate and mean of simulations for mcmc and k
+# Figure 2: var vs difference between estimate and mean of simulations for mcmc and k; Figure S1
 Note that the labels are flipped here, this produces figure 2
 
 ```{r Figure3}
@@ -398,10 +398,23 @@ for(i in 1:length(res_files)){
                      n1 = n1,
                      n2 = n2)
   
+  # per snp
   ps_prep$K <- tk
   ps_prep$iters <- titers
   ps_prep$sim_num <- i
   
+  ## counts seg per snp
+  cn1 <- res_files[[i]]$seg1
+  cn1 <- rowSums(cn1)
+  cn2 <- res_files[[i]]$seg2
+  cn2 <- rowSums(cn2)
+  
+  cn <- rbind(data.frame(pop = paste0("N = ", n1/2), af = allele_frequencies, n_obs_seg = cn1),
+              data.frame(pop = paste0("N = ", n2/2), af = allele_frequencies, n_obs_seg = cn2))
+  ps_prep <- merge(ps_prep, cn, by = c("pop", "af"), sort = FALSE)
+  
+  
+  # total
   ns_prep$all_mcmc_sums$K <- tk
   ns_prep$all_mcmc_sums$iters <- titers
   ns_prep$all_mcmc_sums$i <- i
@@ -414,13 +427,19 @@ for(i in 1:length(res_files)){
 
 ps_all <- rbindlist(ps_list)
 
-ps_all_m <- ps_all[source == "Mathematical",]
+ps_all_m <- ps_all[source == "Mathematical",] # note: all of the CIs in this refer to: is the mathematical expectation in the observed CI.
 ps_all_s <- ps_all[source == "Simulation",]
 ps_all_merge <- merge(ps_all_m[,-c("source")], 
                       ps_all_s[,-c("source")], 
                       by = c("af", "pop", "snp", "sim_num", "lower", "upper", "K", "iters"), 
                       suffixes = c(".mathematical", ".simulated"))
 ps_all_merge[,diff := p.mathematical - p.simulated]
+
+# note: this code does the reverse: is the observed number of seg sites for a locus a set of sims within the PI expected based on the expected prob
+ps_all_merge[,pi_lower := qbinom(.05, iters, p.mathematical)]
+ps_all_merge[,pi_upper := qbinom(.95, iters, p.mathematical)]
+ps_all_merge[,in_pi := n_obs_seg.simulated >= pi_lower & n_obs_seg.simulated <= pi_upper]
+
 
 # Figure S1: gamma vs error rate
 ps_all_aggregate_for_K <- ps_all_merge[, lapply(.SD, mean), .SDcols = "in_ci.mathematical", by = .(K, iters, pop)]
@@ -440,7 +459,9 @@ FS1 <- ggplot(ps_all_aggregate_for_K, aes(x = K, y = in_ci.mathematical*100)) +
   xlab(parse(text = "gamma")) +
   ylab("% estimates in CI")
 
-save_plot("FigureS1.pdf", FS1, base_height = 10, base_width = 15)
+save_plot("FigureS1.pdf", FS1, base_height = 15, base_width = 15)
+save_plot("FigureS1.jpg", FS1, base_height = 15, base_width = 15)
+
 
 # # Figure S2: maf vs error rate
 # ps_all_aggregate_for_af <- ps_all_merge[, lapply(.SD, mean), .SDcols = "in_ci.mathematical", by = .(af, iters, pop)]
@@ -523,7 +544,7 @@ f3 <- plot_grid(f3, f3l, nrow = 1, rel_widths = c(1, .2))
 
 save_plot("Figure2.pdf", f3, base_height = 11, base_width = 15)
 ```
-# Figure 4 Nseg vs parameters
+# Figure 4 Nseg vs parameters; Figure S2
 
 ```{r Figure4}
 ns_all <- rbindlist(ns_list)
@@ -613,7 +634,8 @@ FS2 <- ggplot(ns_all_agg, aes(x = K, y = ENs - nseg, color = pop)) +
 
 
 
-save_plot("FigureS2.pdf", FS2, base_height = 10, base_width = 15)
+save_plot("FigureS2.pdf", FS2, base_height = 10, base_width = 21)
+save_plot("FigureS2.jpg", FS2, base_height = 10, base_width = 21)
 
 
 ```
@@ -646,6 +668,10 @@ d <- d[pop = -c(names(ps)[which(ps < 10)])]
 
 d <- calc_seg_sites(d, "pop", g = 0) # set gamma to the smallest N per loci
 seg_res_mon <- get.snpR.stats(d, "pop", "seg_sites") # follows biogeographic history
+
+# save this as a VCF for the supplementary material example
+format_snps(d, "vcf", outfile = "../data/example_vcf.vcf", chr = "CHROM")
+fwrite(sample.meta(d), "../data/example_metadata.txt", col.names = TRUE, row.names = FALSE, sep = "\t")
 ```
 
 #=========real data example, via rarefaction==========
@@ -681,13 +707,19 @@ mon_rare_res <- as.data.table(mon_rare_res)
 mon_rare_res$i <- 1:tmcmcs
 mon_rare_res <- melt(mon_rare_res, id.vars = "i", variable.name = "pop", value = "Ns")
 
-ggplot(mon_rare_res, aes(x = pop, y = Ns)) +
+FS3 <- ggplot(mon_rare_res, aes(x = pop, y = Ns)) +
   geom_boxplot() +
   geom_point(alpha = .2, position = position_jitter(height = 0, width = .2)) +
-  geom_point(data = seg_res_mon$weighted.means, aes(x = subfacet, y = seg_sites), color = "red") +
+  geom_point(data = seg_res_mon$weighted.means, aes(x = subfacet, y = seg_sites), color = "red", size = 4) +
   theme_bw() +
   ylab(bquote(italic(N[s]))) +
-  xlab("Population")
+  xlab("Population") +
+  theme(axis.text = element_text(size = t.sizes[2]),
+        axis.title = element_text(size = t.sizes[1]),
+        legend.title = element_text(size = t.sizes[1]))
 
+
+save_plot("FigureS3.pdf", FS3, base_width = 15, base_height = 11)
+save_plot("FigureS3.jpg", FS3, base_width = 15, base_height = 11)
 ```
 
