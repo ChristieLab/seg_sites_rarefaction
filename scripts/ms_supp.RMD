@@ -1,0 +1,390 @@
+---
+title: "Seg_sites_rarefaction"
+output: html_document
+date: "2023-08-11"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE); library(snpR); library(ggplot2); library(data.table);
+library(cowplot)
+```
+
+
+# Define parameters
+```{r}
+# define parameters
+seed <- 231266
+threads <- 25
+k <- seq(10, 100, by = 10) # numbers to rarefact to
+mcmcs <- seq(1000, 10000, by = 1000) # number of mcmc draws
+max_missing <- 30 # maximum percentage of missing data in a locus, from a uniform dist
+n1 <- 2500
+n2 <- 250
+
+## derived
+set.seed(seed)
+
+## plotting
+colors <- khroma::color("highcontrast")(3)
+ci_col <- as.character(colors[3])
+colors <- as.character(colors[c(2,1)])
+t.sizes <- c(20, 18)
+```
+
+
+# Setup genotypes
+```{r}
+# g <- GeneArchEst::process_ms("data/ms_out.ms", 10000000)
+# 
+# g <- GeneArchEst::convert_2_to_1_column(g$x)
+# g <- t(g)
+# 
+# g1 <- g[,1:n1]
+# g2 <- g[,(n1 + 1):(n1 + n2)]
+# 
+# # derived parms
+# nal <- nrow(g1)
+# miss_percent <- floor(runif(nal, 0, max_missing))/100
+# 
+# # add missing data
+# ms1 <- lapply(n1*miss_percent, function(x) sample(n1, x, FALSE))  # which are missing
+# ms2 <- lapply(n2*miss_percent, function(x) sample(n2, x, FALSE))
+# 
+# # populate missing
+# 
+# ## do for every locus
+# for(i in 1:nal){ 
+#   g1[i,ms1[[i]]] <- NA
+#   g2[i,ms2[[i]]] <- NA
+# }
+# 
+# # convert ns to gene copy numbers
+# n1 <- n1*2
+# n2 <- n2*2
+
+```
+
+# Rarefact mathematically
+```{r}
+set.seed(seed)
+
+gd <- readRDS("../data/g_ms_large.RDS")
+g1 <- gd$g1
+g2 <- gd$g2
+
+nal <- nrow(g1)
+
+keep_snps <- sort(sample(nal, 10000, FALSE))
+g1 <- g1[keep_snps,]
+g2 <- g2[keep_snps,]
+
+rm(gd); gc();
+
+nal <- length(keep_snps)
+allele_frequencies_g1 <- rowSums(g1, na.rm = TRUE)/(rowSums(!is.na(g1))*2)
+allele_frequencies_g1[allele_frequencies_g1 > .5] <- 1 - allele_frequencies_g1[allele_frequencies_g1 > .5]
+
+allele_frequencies_g2 <- rowSums(g2, na.rm = TRUE)/(rowSums(!is.na(g2))*2)
+allele_frequencies_g2[allele_frequencies_g2 > .5] <- 1 - allele_frequencies_g2[allele_frequencies_g2 > .5]
+
+counts <- function(g){
+  return(data.frame(majhom = rowSums(g == 0, na.rm = TRUE), 
+                    het = rowSums(g == 1, na.rm = TRUE), 
+                    minhom = rowSums(g == 2, na.rm = TRUE)))
+}
+rarefact <- function(counts, k){
+  if(length(k) > 1){
+    warning("length(k) > 1, using first element only.\n")
+    k <- k[1]
+  }
+  return(1 - ((choose(counts[,1], k) + choose(counts[,3], k))/choose(rowSums(counts), k)))
+}
+varseg <- function(p) p*(1-p)
+
+c1 <- counts(g1) # geno counts
+c2 <- counts(g2)
+
+# rarefact
+pseg1 <- lapply(k, function(tk) rarefact(c1, tk))
+pseg2 <- lapply(k, function(tk) rarefact(c2, tk))
+names(pseg1) <- names(pseg2) <- paste0("K_", k)
+
+vseg1 <- lapply(pseg1, varseg)
+vseg2 <- lapply(pseg2, varseg)
+
+p1 <- lapply(pseg1, function(p) sum(p)/nal)
+p2 <- lapply(pseg2, function(p) sum(p)/nal)
+```
+
+
+# Rarefact via simulations
+Note: this chunk should run on a cluster or somewhere else allowing for large numbers of threads, then be re-imported in the next chunk. `q` should be passed as an argument for the iteration, as should `outfile`.
+
+```{r cluster_MCMCs}
+# set.seed(seed + q) # reset seed for cluster
+
+rarefact_mcmc <- function(g, k){
+  if(length(k) > 1){
+    warning("length(k) > 1, using first element only.\n")
+    k <- k[1]
+  }
+  
+  miss <- is.na(g)
+  if(any(miss)){
+    g <- g[-which(miss)]
+  }
+  
+  samp <- sample(g, k, FALSE)
+  seg <- ifelse(any(samp == 1), 1, # got hets
+                ifelse(any(samp == 0) & any(samp == 2), 1, 0)) # got both homs
+  return(seg)
+}
+
+# # draw for each k/mcmc count combination
+combs <- expand.grid(k, mcmcs)
+colnames(combs) <- c("k", "iters")
+# 
+# tmcmcs <- combs$iters[q]
+# tk <- combs$k[q]
+# 
+# seg1 <- seg2 <- matrix(0, nal, tmcmcs)
+# for(i in 1:tmcmcs){
+#   for(j in 1:nal){
+#     seg1[j,i] <- rarefact_mcmc(g1[j,], k = tk)
+#     seg2[j,i] <- rarefact_mcmc(g2[j,], k = tk)
+#   }
+# }
+# 
+# mpseg1 <- binom::binom.confint(rowSums(seg1), rep(tmcmcs, nrow(seg1)),
+#                                method = "agresti-coull")[,c("mean", "lower", "upper")]
+# mpseg2 <- binom::binom.confint(rowSums(seg2), rep(tmcmcs, nrow(seg1)),
+#                                method = "agresti-coull")[,c("mean", "lower", "upper")]
+# 
+# colnames(mpseg1) <- colnames(mpseg2) <- c("mean", "lower", "upper")
+# 
+# res <- list(seg1 = seg1, seg2 = seg2, mpseg1 = mpseg1, mpseg2 = mpseg2, k = tk, iters = tmcmcs)
+# 
+# saveRDS(res, paste0(outfile, "_", q, ".RDS"))
+
+```
+
+# import and condense simulation results
+```{r}
+res_files <- list.files("../data/ms_MCMC/", "mcmc.+\\.RDS", full.names = TRUE)
+q <- gsub(".+__", "", res_files)
+q <- as.numeric(gsub("\\.RDS", "", q))
+# res_files <- pbapply::pblapply(res_files, readRDS)
+ks <- combs$k[q]
+n_iters <- combs$iters[q]
+# ks <- unlist(purrr::map(res_files, "k"))
+# n_iters <- unlist(purrr::map(res_files, "iters"))
+
+```
+
+
+# Figure 1: Pseg for four individual runs (k = 10 and 100, N = 100, N = 1000)
+
+```{r Figure1}
+n1 <- n1*2
+n2 <- n2*2
+prep_f1 <- function(pseg1, pseg2, mpseg1, mpseg2, n1, n2){
+  #========plot the empirical CIs around every loci vs the predicted value==============
+  # plotting the empirical CIs vs the estimated mean
+  pseg <- rbind(data.frame(pop = paste0("N = ", n1/2), p = pseg1, snp = 1:nal, af = allele_frequencies_g1),
+                data.frame(pop = paste0("N = ", n2/2), p = pseg2, snp = 1:nal, af = allele_frequencies_g2))
+  
+  oseg <- rbind(data.frame(pop = paste0("N = ", n1/2), p = mpseg1[,1], snp = 1:nal, af = allele_frequencies_g1),
+                data.frame(pop = paste0("N = ", n2/2), p = mpseg2[,1], snp = 1:nal, af = allele_frequencies_g2))
+  
+  pseg$source <- "Mathematical"
+  oseg$source <- "Simulation"
+  
+  seg <- rbind(pseg, oseg)
+  cis <- rbind(cbind.data.frame(mpseg1, pop = paste0("N = ", n1/2), af = allele_frequencies_g1, snp = 1:nal),
+               cbind.data.frame(mpseg2, pop = paste0("N = ", n2/2), af = allele_frequencies_g2, snp = 1:nal))
+  colnames(cis) <- c("p", "lower", "upper", "pop", "af", "snp")
+  seg <- merge(seg, cis[,c("lower", "upper", "pop", "snp")], by = c("snp", "pop"))
+  seg$in_ci <- ifelse(seg$p >= seg$lower & seg$p <= seg$upper, TRUE, FALSE)
+  
+  return(seg)
+}
+
+K10_data <- which(ks == 10 & n_iters == 10000)
+K10_data <- readRDS(res_files[[K10_data]])
+F1data_K10 <- prep_f1(pseg1 = pseg1$K_10, 
+                      pseg2 = pseg2$K_10, 
+                      mpseg1 = K10_data$mpseg1,
+                      mpseg2 = K10_data$mpseg2,
+                      n1 = n1,
+                      n2 = n2)
+
+K100_data <- which(ks == 100 & n_iters == 10000)
+K100_data <- readRDS(res_files[[K100_data]])
+
+F1data_K100 <- prep_f1(pseg1 = pseg1$K_100, 
+                       pseg2 = pseg2$K_100, 
+                       mpseg1 = K100_data$mpseg1,
+                       mpseg2 = K100_data$mpseg2,
+                       n1 = n1,
+                       n2 = n2)
+
+
+F1data_K10$K <- "gamma * ' = 10'"
+F1data_K100$K <- "gamma * ' = 100'"
+
+F1data <- rbind(F1data_K10, F1data_K100)
+F1data$pop <- paste0("'", F1data$pop, "'")
+
+F1data$in_ci <- ifelse(F1data$in_ci, "Yes", "No")
+
+f1 <- ggplot(F1data[F1data$source == "Mathematical",],
+             aes(x = af, y = p)) +
+  geom_point(aes(color = in_ci), size = 2.5) +
+  geom_errorbar(aes(ymax = upper, ymin = lower)) +
+  facet_grid(K~pop, labeller = label_parsed) +
+  theme_bw() +
+  theme(strip.background = element_blank()) +
+  scale_color_manual(values = colors) +
+  guides(color = guide_legend(title = "In 95% CI")) +
+  ylab(bquote(italic(hat(P)*"("*S[jq]*")"))) +
+  xlab("Minor Allele Frequency") +
+  theme(axis.text = element_text(size = t.sizes[2]),
+        axis.title = element_text(size = t.sizes[1]),
+        strip.text = element_text(size = t.sizes[1]),
+        legend.title = element_text(size = t.sizes[1]),
+        legend.text = element_text(size = t.sizes[2]))
+
+ggsave("FigureS4.pdf", f1, width = 15, height = 10)
+tapply(F1data[F1data$source == "Mathematical", "in_ci"], F1data[F1data$source == "Mathematical", c("K", "pop")], mean) # percent in interval
+```
+
+# Figure 3: Distribution of Nseg vs Eseg for four runs
+Note that the label are flipped here: this produces figure 3.
+
+```{r}
+prep_f2 <- function(seg1, seg2, vseg1, vseg2, F1data, n1, n2){
+  seg <- F1data
+  
+  # normal approximation CI and PI equation given var and N
+  nap_pi <- function(alpha, vseg, n) qnorm(1 - (alpha/2))*sqrt(vseg)*sqrt(1 + (1/n))
+  nap_ci <- function(alpha, vseg, n) qnorm(1 - (alpha/2))*sqrt(vseg)/sqrt(n)
+  
+  # sums across loci
+  msum1 <- colSums(seg1)
+  msum2 <- colSums(seg2)
+  
+  # CI/PI
+  msum_ci1 <- nap_ci(.05, var(msum1), length(msum1))
+  msum_ci2 <- nap_ci(.05, var(msum2), length(msum2))
+  
+  sum_pi1 <- nap_pi(0.05, sum(vseg1), nal)
+  sum_pi2 <- nap_pi(0.05, sum(vseg2), nal)
+  
+  # add to table
+  msum_tab <- data.frame(nseg = c(mean(msum1), mean(msum2)),
+                         lower = c(mean(msum1) - msum_ci1, mean(msum2) - msum_ci2),
+                         upper = c(mean(msum1) + msum_ci1, mean(msum2) + msum_ci2),
+                         pop = c(paste0("n = ", n1/2), paste0("n = ", n2/2)))
+  
+  sum_tab <- tapply(seg[seg$source == "Mathematical",]$p, seg[seg$source == "Mathematical",]$pop, sum)
+  sum_tab <- as.data.frame(sum_tab)
+  sum_tab$pop <- tolower(rownames(sum_tab))
+  colnames(sum_tab)[1] <- "nseg"
+  sum_tab <- merge(sum_tab, msum_tab[,c("pop", "lower", "upper")], by = "pop")
+  sum_tab$in_ci <- sum_tab$nseg <= sum_tab$upper & sum_tab$nseg >= sum_tab$lower
+  
+  # add pi
+  all_mcmc_sums <- rbind(cbind.data.frame(nseg = msum1, pop = paste0("n = ", n1/2)),
+                         cbind.data.frame(nseg = msum2, pop = paste0("n = ", n2/2)))
+  pi_tab <- data.frame(pop = c(paste0("n = ", n1/2), paste0("n = ", n2/2)),
+                       lower = c(sum_tab$nseg[sum_tab$pop == paste0("n = ", n1/2)] - sum_pi1,
+                                 sum_tab$nseg[sum_tab$pop == paste0("n = ", n2/2)] - sum_pi2),
+                       upper = c(sum_tab$nseg[sum_tab$pop == paste0("n = ", n1/2)] + sum_pi1,
+                                 sum_tab$nseg[sum_tab$pop == paste0("n = ", n2/2)] + sum_pi2))
+  all_mcmc_sums <- merge(all_mcmc_sums, pi_tab, by = "pop")
+  all_mcmc_sums$in_pi <- all_mcmc_sums$nseg <=  all_mcmc_sums$upper & all_mcmc_sums$nseg >=  all_mcmc_sums$lower
+  
+  return(list(sum_tab = sum_tab, all_mcmc_sums = all_mcmc_sums, pi_tab = pi_tab))
+}
+
+K20_data <- which(ks == 20 & n_iters == 10000)
+K20_data <- readRDS(res_files[[K20_data]])
+
+F1data_K20 <- prep_f1(pseg1 = pseg1$K_20, 
+                       pseg2 = pseg2$K_20, 
+                       mpseg1 = K20_data$mpseg1,
+                       mpseg2 = K20_data$mpseg2,
+                       n1 = n1,
+                       n2 = n2)
+
+F2data_K10 <- prep_f2(seg1 = K10_data$seg1, 
+                      seg2 = K10_data$seg2, 
+                      vseg1 = vseg1$K_10,
+                      vseg2 = vseg2$K_10,
+                      F1data = F1data_K10,
+                      n1 = n1,
+                      n2 = n2)
+
+F2data_K20 <- prep_f2(seg1 = K20_data$seg1, 
+                       seg2 = K20_data$seg2, 
+                       vseg1 = vseg1$K_20,
+                       vseg2 = vseg2$K_20,
+                       F1data = F1data_K20,
+                       n1 = n1,
+                       n2 = n2)
+
+
+F2data_K10$sum_tab$K <- "gamma * ' = 10'"
+F2data_K20$sum_tab$K <- "gamma * ' = 20'"
+F2data_K10$all_mcmc_sums$K <- "gamma * ' = 10'"
+F2data_K20$all_mcmc_sums$K <- "gamma * ' = 20'"
+F2data_K10$pi_tab$K <- "gamma * ' = 10'"
+F2data_K20$pi_tab$K <- "gamma * ' = 20'"
+
+F2data_sums <- rbind(F2data_K10$sum_tab, F2data_K20$sum_tab)
+F2data_sums$pop <- gsub("n", "N", F2data_sums$pop)
+F2data_sums$pop <- paste0("'", F2data_sums$pop, "'")
+
+F2data_mcmcs <- rbind(F2data_K10$all_mcmc_sums, F2data_K20$all_mcmc_sums)
+F2data_mcmcs$pop <- gsub("n", "N", F2data_mcmcs$pop)
+F2data_mcmcs$pop <- paste0("'", F2data_mcmcs$pop, "'")
+
+F2data_pi <- rbind(F2data_K10$pi_tab, F2data_K20$pi_tab)
+F2data_pi$pop <- gsub("n", "N", F2data_pi$pop)
+F2data_pi$pop <- paste0("'", F2data_pi$pop, "'")
+
+
+F2data_mcmcs <- as.data.table(F2data_mcmcs)
+levs <- unique(F2data_mcmcs[,c("pop", "K")])
+F2data_densities <- vector("list", nrow(levs))
+
+for(i in 1:nrow(levs)){
+  d <- density(F2data_mcmcs[K == levs$K[i] & pop == levs$pop[i],]$nseg)
+  q <- quantile(F2data_mcmcs[K == levs$K[i] & pop == levs$pop[i],]$nseg, c(0.025,0.975))
+  F2data_densities[[i]] <- data.table(x = d$x, y = d$y, K = levs$K[i], pop = levs$pop[i])
+  F2data_densities[[i]]$quant <- factor(findInterval(F2data_densities[[i]]$x, q))
+}
+
+F2data_densities <- rbindlist(F2data_densities)
+
+f2 <- ggplot(F2data_densities, aes(x = x, y = y)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = 0, ymax = y, fill = quant), show.legend = FALSE) +
+  geom_vline(data = F2data_sums, aes(xintercept = nseg), color = colors[1]) +
+  geom_vline(data = F2data_pi, aes(xintercept = lower), linetype = "dashed", color = colors[2]) +
+  geom_vline(data = F2data_pi, aes(xintercept = upper), linetype = "dashed", color = colors[2]) +
+  facet_grid(K~pop, labeller = label_parsed) +
+  theme_bw() +
+  scale_y_continuous(expand = c(0,0)) +
+  scale_fill_manual(values = c("#004488", "#ffffff", "#004488")) +
+  theme(axis.text = element_text(size = t.sizes[2]),
+        axis.title = element_text(size = t.sizes[1]),
+        strip.text = element_text(size = t.sizes[1]),
+        strip.background = element_blank()) +
+  xlab(bquote(italic(S))) +
+  ylab("Density")
+
+ggsave("FigureS5.svg", f2, height = 10, width = 15)
+
+```
+

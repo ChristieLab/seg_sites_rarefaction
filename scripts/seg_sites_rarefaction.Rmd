@@ -15,7 +15,7 @@ library(cowplot)
 # define parameters
 seed <- 231266
 threads <- 25
-allele_frequencies <- seq(.001, .1, by = .001) # allele frequencies
+allele_frequencies <- seq(.001, .5, by = .001) # allele frequencies
 n1 <- 5000 # p1 gene copy number
 n2 <- 500 # p2 gene copy number
 k <- seq(10, 100, by = 10) # numbers to rarefact to
@@ -365,7 +365,7 @@ f2 <- ggplot(F2data_densities, aes(x = x, y = y)) +
         axis.title = element_text(size = t.sizes[1]),
         strip.text = element_text(size = t.sizes[1]),
         strip.background = element_blank()) +
-  xlab(bquote(italic(N[S]))) +
+  xlab(bquote(italic(S))) +
   ylab("Density")
 
 ggsave("Figure3.pdf", f2, height = 10, width = 15)
@@ -561,7 +561,7 @@ f4a <- ggplot(ns_all[iters == 10000,], aes(x = K, y = nseg)) +
   stat_ydensity(aes(group = K), draw_quantiles = c(.025, .5, .975), scale = "width", bw = .4,
                 fill = NA, width = 6) +
   facet_wrap(~pop) +
-  scale_y_continuous(breaks = seq(40, 100, by = 10), limits = c(40, 100)) +
+  scale_y_continuous(breaks = seq(430, 500, by = 10), limits = c(430, 500)) +
   theme_bw() + 
   scale_x_continuous(breaks = k) +
   theme(axis.text = element_text(size = t.sizes[2]),
@@ -570,7 +570,7 @@ f4a <- ggplot(ns_all[iters == 10000,], aes(x = K, y = nseg)) +
         strip.text = element_text(size = t.sizes[1]),
         strip.background = element_blank(),
         legend.text = element_text(size = t.sizes[2])) +
-  ylab(bquote(italic(N[S]))) +
+  ylab(bquote(italic(S))) +
   xlab(bquote(gamma))
 
 f4b <- ggplot(ns_all[K == 50,], aes(x = iters, y = nseg)) +
@@ -584,7 +584,7 @@ f4b <- ggplot(ns_all[K == 50,], aes(x = iters, y = nseg)) +
                 fill = NA, width = 600) +
   facet_wrap(~pop) +
   theme_bw() + 
-  scale_y_continuous(breaks = seq(40, 100, by = 5), limits = c(80, 100)) +
+  scale_y_continuous(breaks = seq(480, 500, by = 5), limits = c(480, 500)) +
   scale_x_continuous(breaks = mcmcs) +
   theme(axis.text = element_text(size = t.sizes[2]),
         axis.title = element_text(size = t.sizes[1]),
@@ -593,7 +593,7 @@ f4b <- ggplot(ns_all[K == 50,], aes(x = iters, y = nseg)) +
         strip.text = element_blank(),
         strip.background = element_blank(),
         legend.text = element_text(size = t.sizes[2])) +
-  ylab(bquote(italic(N[S]))) +
+  ylab(bquote(italic(S))) +
   xlab("Number of Simulated Draws")
 
 f4 <- plot_grid(f4a, f4b, ncol = 1, axis = "l", align = "l")
@@ -628,7 +628,7 @@ FS2 <- ggplot(ns_all_agg, aes(x = K, y = ENs - nseg, color = pop)) +
         strip.background = element_blank(),
         strip.text = element_text(size = t.sizes[1]),
         legend.text = element_text(size = t.sizes[2])) +
-  ylab(bquote(italic(E(N[S])) * " - " * italic(N[S,observed]))) +
+  ylab(bquote(italic(S^"'") * " - " * italic(S))) +
   xlab(bquote(gamma)) +
   guides(color = guide_legend(title = "Population"))
 
@@ -712,7 +712,7 @@ FS3 <- ggplot(mon_rare_res, aes(x = pop, y = Ns)) +
   geom_point(alpha = .2, position = position_jitter(height = 0, width = .2)) +
   geom_point(data = seg_res_mon$weighted.means, aes(x = subfacet, y = seg_sites), color = "red", size = 4) +
   theme_bw() +
-  ylab(bquote(italic(N[s]))) +
+  ylab(bquote(italic(S))) +
   xlab("Population") +
   theme(axis.text = element_text(size = t.sizes[2]),
         axis.title = element_text(size = t.sizes[1]),
@@ -722,4 +722,3 @@ FS3 <- ggplot(mon_rare_res, aes(x = pop, y = Ns)) +
 save_plot("FigureS3.pdf", FS3, base_width = 15, base_height = 11)
 save_plot("FigureS3.jpg", FS3, base_width = 15, base_height = 11)
 ```
-
