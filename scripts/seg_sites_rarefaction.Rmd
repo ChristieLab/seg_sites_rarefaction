@@ -239,7 +239,8 @@ f1 <- ggplot(F1data[F1data$source == "Mathematical",],
         legend.text = element_text(size = t.sizes[2]))
 
 ggsave("Figure1.pdf", f1, width = 15, height = 10)
-tapply(F1data[F1data$source == "Mathematical", "in_ci"], F1data[F1data$source == "Mathematical", c("K", "pop")], mean) # percent in interval
+tapply(F1data[F1data$source == "Mathematical", "in_ci"], F1data[F1data$source == "Mathematical", c("K", "pop")], function(x) mean(ifelse(x == "Yes", TRUE, FALSE))) # percent in interval
+mean(ifelse(F1data[F1data$source == "Mathematical", "in_ci"] == "Yes", TRUE, FALSE))
 ```
 
 # Figure 3: Distribution of Nseg vs Eseg for four runs
