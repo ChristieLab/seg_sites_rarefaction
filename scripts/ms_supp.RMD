@@ -182,7 +182,7 @@ n_iters <- combs$iters[q]
 ```
 
 
-# Figure 1: Pseg for four individual runs (k = 10 and 100, N = 100, N = 1000)
+# Figure S5: Pseg for four individual runs (k = 10 and 100, N = 100, N = 1000)
 
 ```{r Figure1}
 n1 <- n1*2
@@ -254,11 +254,11 @@ f1 <- ggplot(F1data[F1data$source == "Mathematical",],
         legend.title = element_text(size = t.sizes[1]),
         legend.text = element_text(size = t.sizes[2]))
 
-ggsave("FigureS4.pdf", f1, width = 15, height = 10)
+ggsave("FigureS5.pdf", f1, width = 15, height = 10)
 tapply(F1data[F1data$source == "Mathematical", "in_ci"], F1data[F1data$source == "Mathematical", c("K", "pop")], mean) # percent in interval
 ```
 
-# Figure 3: Distribution of Nseg vs Eseg for four runs
+# Figure S6: Distribution of Nseg vs Eseg for four runs
 Note that the label are flipped here: this produces figure 3.
 
 ```{r}
@@ -384,7 +384,7 @@ f2 <- ggplot(F2data_densities, aes(x = x, y = y)) +
   xlab(bquote(italic(S))) +
   ylab("Density")
 
-ggsave("FigureS5.svg", f2, height = 10, width = 15)
+ggsave("FigureS6.svg", f2, height = 10, width = 15)
 
 ```
 

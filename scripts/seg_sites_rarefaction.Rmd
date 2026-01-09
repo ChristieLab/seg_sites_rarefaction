@@ -76,6 +76,96 @@ for(i in 1:nal){
 g1 <- g1[,1:(ncol(g1)/2)] + g1[,((ncol(g1)/2) + 1):ncol(g1)]
 g2 <- g2[,1:(ncol(g2)/2)] + g2[,((ncol(g2)/2) + 1):ncol(g2)]
 
+## HWP p-values
+hwp_f <- function(x){
+  nseq <- rowSums(!is.na(x))
+  qq <- rowSums(x == 2, na.rm = TRUE)
+  pp <- rowSums(x == 0, na.rm = TRUE)
+  pq <- rowSums(x == 1, na.rm = TRUE)
+  
+  # edited from Wigginton, JE, Cutler, DJ, and Abecasis, GR (2005) A Note on Exact Tests of
+  # Hardy-Weinberg Equilibrium. American Journal of Human Genetics. 76: 000 - 000
+  # code available at http://csg.sph.umich.edu/abecasis/Exact/snp_hwe.r
+  exact.hwe <- function(pp, qq, pq2){
+    if(all(c(pp, qq, pq2) == 0)){
+      return(-1.0)
+    }
+    obs_homr <- min(c(pp, qq))
+    obs_homc <- max(c(pp, qq))
+    obs_hets <- pq2
+    if (obs_homr < 0 || obs_homc < 0 || obs_hets < 0){
+      return(-1.0)
+    }
+    # total number of genotypes
+    N <- obs_homr + obs_homc + obs_hets
+    
+    # number of rare allele copies
+    rare  <- obs_homr * 2 + obs_hets
+    
+    # Initialize probability array
+    probs <- rep(0, 1 + rare)
+    
+    # Find midpoint of the distribution
+    mid <- floor(rare * ( 2 * N - rare) / (2 * N))
+    if ((mid %% 2) != (rare %% 2)) mid <- mid + 1
+    
+    probs[mid + 1] <- 1.0
+    mysum <- 1.0
+    
+    # Calculate probablities from midpoint down
+    curr_hets <- mid
+    curr_homr <- (rare - mid) / 2
+    curr_homc <- N - curr_hets - curr_homr
+    
+    while (curr_hets >=  2){
+      #equation 2
+      probs[curr_hets - 1]  <- probs[curr_hets + 1] * curr_hets * (curr_hets - 1.0) / (4.0 * (curr_homr + 1.0)  * (curr_homc + 1.0))
+      mysum <- mysum + probs[curr_hets - 1]
+      
+      # 2 fewer heterozygotes -> add 1 rare homozygote, 1 common homozygote
+      curr_hets <- curr_hets - 2
+      curr_homr <- curr_homr + 1
+      curr_homc <- curr_homc + 1
+    }
+    
+    # Calculate probabilities from midpoint up
+    curr_hets <- mid
+    curr_homr <- (rare - mid) / 2
+    curr_homc <- N - curr_hets - curr_homr
+    
+    while (curr_hets <= rare - 2){
+      probs[curr_hets + 3] <- probs[curr_hets + 1] * 4.0 * curr_homr * curr_homc / ((curr_hets + 2.0) * (curr_hets + 1.0))
+      mysum <- mysum + probs[curr_hets + 3]
+      
+      # add 2 heterozygotes -> subtract 1 rare homozygtote, 1 common homozygote
+      curr_hets <- curr_hets + 2
+      curr_homr <- curr_homr - 1
+      curr_homc <- curr_homc - 1
+    }
+    
+    # P-value calculation
+    target <- probs[obs_hets + 1]
+    p <- min(1.0, sum(probs[probs <= target])/ mysum)
+    return(p)
+  }
+  
+  pv <- numeric(nrow(x))
+  for(i in 1:nrow(x)){
+    pv[i] <- exact.hwe(pp[i], qq[i], pq[i])
+  }
+  
+  p <- (pp*2 + pq)/(2*nseq)
+  
+  he <- 2*p*(1-p)
+  ho <- pq/nseq
+  fis <- (he - ho)/he
+  
+  return(data.table(hwp_p = pv, fis = fis, snp = 1:length(pv)))
+}
+hwp <- lapply(list(g1, g2), hwp_f)
+names(hwp) <- c("N = 2500", "N = 250")
+hwp <- rbindlist(hwp, idcol = "pop")
+
 ```
 
 # Rarefact mathematically
@@ -222,14 +312,19 @@ F1data$pop <- paste0("'", F1data$pop, "'")
 F1data$in_ci <- ifelse(F1data$in_ci, "Yes", "No")
 
 f1 <- ggplot(F1data[F1data$source == "Mathematical",],
-             aes(x = af, y = p)) +
-  geom_point(aes(color = in_ci), size = 2.5) +
+             mapping = aes(x = af, y = p)) +
+  geom_point(data = F1data[F1data$source == "Mathematical" & F1data$in_ci == "Yes",],
+             size = 2.5, color = colors[2]) +
+  geom_point(data = F1data[F1data$source == "Mathematical" & F1data$in_ci == "No",],
+             size = 2.5, color = colors[1]) +
+  geom_point(data = data.frame(af = 0, p = 0, in_ci = c("Yes", "No")),
+             aes(color = in_ci), size = 2.5, alpha = 0) +
   geom_errorbar(aes(ymax = upper, ymin = lower)) +
   facet_grid(K~pop, labeller = label_parsed) +
   theme_bw() +
   theme(strip.background = element_blank()) +
   scale_color_manual(values = colors) +
-  guides(color = guide_legend(title = "In 95% CI")) +
+  guides(color = guide_legend(title = "In 95% CI", override.aes = list(alpha = 1))) +
   ylab(bquote(italic(hat(P)*"("*S[jq]*")"))) +
   xlab("Minor Allele Frequency") +
   theme(axis.text = element_text(size = t.sizes[2]),
@@ -242,6 +337,35 @@ ggsave("Figure1.pdf", f1, width = 15, height = 10)
 tapply(F1data[F1data$source == "Mathematical", "in_ci"], F1data[F1data$source == "Mathematical", c("K", "pop")], function(x) mean(ifelse(x == "Yes", TRUE, FALSE))) # percent in interval
 mean(ifelse(F1data[F1data$source == "Mathematical", "in_ci"] == "Yes", TRUE, FALSE))
 ```
+# Figure S1: Prop in 95% CI vs HWP divergence/MAF
+```{r}
+
+FS1d <- F1data[F1data$source == "Mathematical",]
+hwp$pop <- paste0("'", hwp$pop, "'")
+
+FS1d <- merge(FS1d, hwp, by = c("pop", "snp"))
+
+fs1 <- ggplot(FS1d,
+             aes(x = af, y = hwp_p, color = in_ci)) +
+  geom_point(stat = "identity") +
+  facet_grid(K~pop, labeller = label_parsed) +
+  theme_bw() +
+  theme(strip.background = element_blank()) +
+  scale_color_manual(values = colors) +
+  guides(color = guide_legend(title = "In 95% CI")) +
+  ylab(bquote(italic(p[HWP]))) +
+  xlab("Minor Allele Frequency") +
+  theme(axis.text = element_text(size = t.sizes[2]),
+        axis.title = element_text(size = t.sizes[1]),
+        strip.text = element_text(size = t.sizes[1]),
+        legend.title = element_text(size = t.sizes[1]),
+        legend.text = element_text(size = t.sizes[2]))
+
+
+ggsave("FigureS1.pdf", fs1,height = 8, width = 12)
+```
+
+
 
 # Figure 3: Distribution of Nseg vs Eseg for four runs
 Note that the label are flipped here: this produces figure 3.
@@ -373,7 +497,7 @@ ggsave("Figure3.pdf", f2, height = 10, width = 15)
 
 ```
 
-# Figure 2: var vs difference between estimate and mean of simulations for mcmc and k; Figure S1
+# Figure 2: var vs difference between estimate and mean of simulations for mcmc and k; Figure S2
 Note that the labels are flipped here, this produces figure 2
 
 ```{r Figure3}
@@ -444,7 +568,7 @@ ps_all_merge[,in_pi := n_obs_seg.simulated >= pi_lower & n_obs_seg.simulated <= 
 
 # Figure S1: gamma vs error rate
 ps_all_aggregate_for_K <- ps_all_merge[, lapply(.SD, mean), .SDcols = "in_ci.mathematical", by = .(K, iters, pop)]
-FS1 <- ggplot(ps_all_aggregate_for_K, aes(x = K, y = in_ci.mathematical*100)) +
+FS2 <- ggplot(ps_all_aggregate_for_K, aes(x = K, y = in_ci.mathematical*100)) +
   geom_point() +
   geom_smooth(method = "lm", se = FALSE) +
   facet_grid(iters~pop) +
@@ -460,8 +584,8 @@ FS1 <- ggplot(ps_all_aggregate_for_K, aes(x = K, y = in_ci.mathematical*100)) +
   xlab(parse(text = "gamma")) +
   ylab("% estimates in CI")
 
-save_plot("FigureS1.pdf", FS1, base_height = 15, base_width = 15)
-save_plot("FigureS1.jpg", FS1, base_height = 15, base_width = 15)
+save_plot("FigureS2.pdf", FS2, base_height = 15, base_width = 15)
+save_plot("FigureS2.jpg", FS2, base_height = 15, base_width = 15)
 
 
 # # Figure S2: maf vs error rate
@@ -484,6 +608,7 @@ save_plot("FigureS1.jpg", FS1, base_height = 15, base_width = 15)
 
 ps_all_merge[,in_ci.mathematical := ifelse(in_ci.mathematical, "Yes", "No")]
 ps_all_merge[,in_ci.mathematical := factor(in_ci.mathematical, c("Yes", "No"))]
+
 f3a <- ggplot(ps_all_merge, aes(x = K, y = diff, color = in_ci.mathematical, group = in_ci.mathematical)) +
   geom_point(position = position_dodge(4)) +
   theme_bw() +
@@ -544,6 +669,7 @@ f3 <- plot_grid(f3a + guides(color = "none"),
 f3 <- plot_grid(f3, f3l, nrow = 1, rel_widths = c(1, .2))
 
 save_plot("Figure2.pdf", f3, base_height = 11, base_width = 15)
+save_plot("Figure2.jpg", f3, base_height = 11, base_width = 15, dpi = 1000)
 ```
 # Figure 4 Nseg vs parameters; Figure S2
 
@@ -616,7 +742,7 @@ ns_all_agg_med$pop <- gsub("n", "N", ns_all_agg_med$pop)
 ns_all_agg_med$stat <- "Median"
 
 ns_all_agg <- rbind(ns_all_agg, ns_all_agg_med)
-FS2 <- ggplot(ns_all_agg, aes(x = K, y = ENs - nseg, color = pop)) +
+FS3 <- ggplot(ns_all_agg, aes(x = K, y = ENs - nseg, color = pop)) +
   geom_point() +
   facet_grid(stat~iters) +
   khroma::scale_color_highcontrast() +
@@ -635,8 +761,8 @@ FS2 <- ggplot(ns_all_agg, aes(x = K, y = ENs - nseg, color = pop)) +
 
 
 
-save_plot("FigureS2.pdf", FS2, base_height = 10, base_width = 21)
-save_plot("FigureS2.jpg", FS2, base_height = 10, base_width = 21)
+save_plot("FigureS3.pdf", FS2, base_height = 10, base_width = 21)
+save_plot("FigureS3.jpg", FS2, base_height = 10, base_width = 21)
 
 
 ```
@@ -669,6 +795,7 @@ d <- d[pop = -c(names(ps)[which(ps < 10)])]
 
 d <- calc_seg_sites(d, "pop", g = 0) # set gamma to the smallest N per loci
 seg_res_mon <- get.snpR.stats(d, "pop", "seg_sites") # follows biogeographic history
+
 
 # save this as a VCF for the supplementary material example
 format_snps(d, "vcf", outfile = "../data/example_vcf.vcf", chr = "CHROM")
@@ -708,7 +835,7 @@ mon_rare_res <- as.data.table(mon_rare_res)
 mon_rare_res$i <- 1:tmcmcs
 mon_rare_res <- melt(mon_rare_res, id.vars = "i", variable.name = "pop", value = "Ns")
 
-FS3 <- ggplot(mon_rare_res, aes(x = pop, y = Ns)) +
+FS4 <- ggplot(mon_rare_res, aes(x = pop, y = Ns)) +
   geom_boxplot() +
   geom_point(alpha = .2, position = position_jitter(height = 0, width = .2)) +
   geom_point(data = seg_res_mon$weighted.means, aes(x = subfacet, y = seg_sites), color = "red", size = 4) +
@@ -720,6 +847,180 @@ FS3 <- ggplot(mon_rare_res, aes(x = pop, y = Ns)) +
         legend.title = element_text(size = t.sizes[1]))
 
 
-save_plot("FigureS3.pdf", FS3, base_width = 15, base_height = 11)
-save_plot("FigureS3.jpg", FS3, base_width = 15, base_height = 11)
+save_plot("FigureS4.pdf", FS3, base_width = 15, base_height = 11)
+save_plot("FigureS4.jpg", FS3, base_width = 15, base_height = 11)
 ```
+
+#==================real data example, comparing with and without correction=============
+
+Hemstrom et al 2022; monarch butterflies
+```{r}
+#================import data==============
+d <- readRDS("../data/monarchs_non_strict.RDS")
+
+# calculate seg_sites with and without rarefaction
+sample.meta(d)$pop[sample.meta(d)$pop %in% c("ENA", "WNA")] <- "NAM"
+#================calculate rarefacted vs. base S vs. ws.theta=============
+d_r <- calc_seg_sites(d, "pop")
+d_nr <- calc_seg_sites(d, "pop", rarefaction = FALSE)
+d_r <- calc_tajimas_d(d_r, "pop", global = TRUE)
+
+res1_mon <- get.snpR.stats(d_r, "pop", c("seg_sites"))
+res2_mon <- get.snpR.stats(d_nr, "pop", c("seg_sites"))
+wst_mon <- get.snpR.stats(d_r, "pop", c("tsd"))$weighted.means
+
+
+# format for plotting
+pd1_mon <- cbind(res1_mon$weighted.means, Statistic = "S'")
+pd1_mon$rank <- rank(pd1_mon$seg_sites)
+pd2_mon <- cbind(res2_mon$weighted.means, Statistic = "S")
+pd2_mon$rank <- rank(pd2_mon$seg_sites)
+pd3_mon <- cbind(wst_mon, Statistic = "Watterson's Theta")
+pd3_mon$rank <- rank(pd3_mon$global_ws.theta)
+pd3_mon <- pd3_mon[,c("facet", "subfacet", "snp.facet", "snp.subfacet", "global_ws.theta", "global_ts.theta", "Statistic", "rank")]
+colnames(pd3_mon)[5:6] <- c("seg_sites", "seg_sites_var")
+pd3_mon$seg_sites_var <- NA
+pd_mon <- rbind(pd1_mon, pd2_mon, pd3_mon)
+pd_mon$subfacet <- factor(pd_mon$subfacet, pd1_mon$subfacet[order(rank(pd1_mon$seg_sites))])
+n_mon <- summarize_facets(d_r, "pop")
+pd_mon$N <- as.numeric(n_mon$pop[match(pd_mon$subfacet, names(n_mon$pop))])
+pd_mon <- as.data.table(pd_mon)
+pd_mon <- dplyr::arrange(pd_mon, Statistic, subfacet)
+pd_mon$slope <- c(pd_mon$seg_sites[-1] - pd_mon$seg_sites[-nrow(pd_mon)], NA)
+pd_mon$slope[nrow(pd_mon)/2] <- NA
+
+
+pd_slope_mon <- pd_mon |>
+  dplyr::group_by(Statistic) |>
+  dplyr::mutate(xend = dplyr::lead(subfacet), yend = dplyr::lead(seg_sites)) 
+pd_slope_mon$`Order Agrees?` <- pd_slope_mon$slope < 0
+pd_slope_mon$`Order Agrees?` <- ifelse(pd_slope_mon$`Order Agrees?`, "No", "Yes")
+pd_slope_mon$`Order Agrees?` <- factor(pd_slope_mon$`Order Agrees?`, levels = c("Yes", "No"))
+
+F6_mon <- ggplot() +
+  geom_point(mapping = aes(x = subfacet, y = log10(seg_sites), color = Statistic, size = N), data = pd_mon) +
+  geom_line(data = pd_mon[pd_mon$Statistic == "S'",],
+            aes(x = subfacet, y = log10(seg_sites), group = Statistic),
+            color = khroma::color("highcontrast")(3)[2], inherit.aes = FALSE) +
+  geom_segment(aes(linetype = `Order Agrees?`, x = subfacet, xend = xend, y = log10(seg_sites), yend = log10(yend), color = Statistic),
+               data = pd_slope_mon[-which(is.na(pd_slope_mon$slope) |
+                                        is.na(pd_slope_mon$xend)),]) +
+  khroma::scale_color_highcontrast() +
+  theme_bw() +
+  scale_size_continuous(breaks = sort(unique(pd_mon$N))) +
+  theme(axis.text.x = element_text(angle = 90, vjust = .5),
+        axis.text = element_text(size = t.sizes[2]),
+        axis.title = element_text(size = t.sizes[1]),
+        legend.title = element_text(size = t.sizes[1])) +
+  guides(color = guide_legend(title = "Estimator")) +
+  xlab("Population") +
+  ylab("log10(Estimator Value)")
+
+# save_plot("FigureS6.jpeg", F6, base_width = 15, base_height = 11)
+```
+
+Jahnke et al 2025; eel grass
+
+```{r}
+#================import data kindly provided by Authors==============
+load("../data/gl_124samples_111MLL_1648loci_no_replicates.rda")
+# load("~/../Downloads/29128325/analysis_gen_div_and_diff/gl_189samples_1689loci_no_replicates.rda")
+
+pops1 <- adegenet::indNames(gl_filtered)
+pops1 <- as.factor(substr(pops1, 9, 11))
+
+# pops2 <- adegenet::indNames(gl_zostera_no_rep)
+# pops2 <- as.factor(substr(pops2, 9, 11))
+
+gl_filtered <- convert_genlight(gl_filtered)
+# gl_zostera_no_rep <- convert_genlight(gl_zostera_no_rep)
+
+sample.meta(gl_filtered)$pop <- pops1
+# sample.meta(gl_zostera_no_rep)$pop <- pops2
+
+#================calculate rarefacted vs. base S vs. ws.theta=============
+gl1_r <- calc_seg_sites(gl_filtered, "pop")
+gl1_nr <- calc_seg_sites(gl_filtered, "pop", rarefaction = FALSE)
+gl1_r <- calc_tajimas_d(gl1_r, "pop", global = TRUE)
+
+# gl2_r <- calc_seg_sites(gl_zostera_no_rep, "pop")
+# gl2_nr <- calc_seg_sites(gl_zostera_no_rep, "pop", rarefaction = FALSE)
+# gl2_r <- calc_tajimas_d(gl2_r, "pop", global = TRUE)
+
+res1 <- get.snpR.stats(gl1_r, "pop", c("seg_sites"))
+res2 <- get.snpR.stats(gl1_nr, "pop", c("seg_sites"))
+wst <- get.snpR.stats(gl1_r, "pop", c("tsd"))$weighted.means
+# res2$seg_sites_var <- NULL
+# colnames(res2)[5] <- "raw_set_sites"
+# 
+# 
+# res <- as.data.table(merge(res1, res2, by = c("facet", "subfacet", "snp.facet", "snp.subfacet")))
+# res <- melt(res[,-.(subfacet, seg_sites, seg_sites)], id.vars = c("facet", "subfacet", "snp.facet", "snp.subfacet"))
+
+
+# format for plotting
+pd1 <- cbind(res1$weighted.means, Statistic = "S'")
+pd1$rank <- rank(pd1$seg_sites)
+pd2 <- cbind(res2$weighted.means, Statistic = "S")
+pd2$rank <- rank(pd2$seg_sites)
+pd3 <- cbind(wst, Statistic = "Watterson's Theta")
+pd3$rank <- rank(pd3$global_ws.theta)
+pd3 <- pd3[,c("facet", "subfacet", "snp.facet", "snp.subfacet", "global_ws.theta", "global_ts.theta", "Statistic", "rank")]
+colnames(pd3)[5:6] <- c("seg_sites", "seg_sites_var")
+pd3$seg_sites_var <- NA
+pd <- rbind(pd1, pd2, pd3)
+pd$subfacet <- factor(pd$subfacet, pd1$subfacet[order(rank(pd1$seg_sites))])
+n <- summarize_facets(gl1_r, "pop")
+pd$N <- as.numeric(n$pop[match(pd$subfacet, names(n$pop))])
+pd <- as.data.table(pd)
+pd <- dplyr::arrange(pd, Statistic, subfacet)
+pd$slope <- c(pd$seg_sites[-1] - pd$seg_sites[-nrow(pd)], NA)
+pd$slope[nrow(pd)/2] <- NA
+
+
+pd_slope <- pd |>
+  dplyr::group_by(Statistic) |>
+  dplyr::mutate(xend = dplyr::lead(subfacet), yend = dplyr::lead(seg_sites)) 
+pd_slope$`Order Agrees?` <- pd_slope$slope < 0
+pd_slope$`Order Agrees?` <- ifelse(pd_slope$`Order Agrees?`, "No", "Yes")
+pd_slope$`Order Agrees?` <- factor(pd_slope$`Order Agrees?`, levels = c("Yes", "No"))
+
+F6 <- ggplot() +
+  geom_point(mapping = aes(x = subfacet, y = seg_sites, color = Statistic, size = N), data = pd) +
+  geom_line(data = pd[pd$Statistic == "S'",],
+            aes(x = subfacet, y = seg_sites, group = Statistic),
+            color = khroma::color("highcontrast")(3)[2], inherit.aes = FALSE) +
+  geom_segment(aes(linetype = `Order Agrees?`, x = subfacet, xend = xend, y = seg_sites, yend = yend, color = Statistic),
+               data = pd_slope[-which(is.na(pd_slope$slope) |
+                                        is.na(pd_slope$xend)),]) +
+  khroma::scale_color_highcontrast() +
+  theme_bw() +
+  scale_size_continuous(breaks = sort(unique(pd$N))) +
+  theme(axis.text.x = element_text(angle = 90, vjust = .5),
+        axis.text = element_text(size = t.sizes[2]),
+        axis.title = element_text(size = t.sizes[1]),
+        legend.title = element_text(size = t.sizes[1])) +
+  guides(color = guide_legend(title = "Estimator")) +
+  xlab("Population") +
+  ylab("Estimator Value")
+
+```
+
+Joint figure
+```{r}
+F6_jL <- ggpubr::get_legend(F6 + guides(size = "none"))
+F6_comb <- cowplot::plot_grid(F6_mon + 
+                                guides(color = "none", linetype = "none") + 
+                                ggtitle("A") + 
+                                theme(plot.title = element_text(size = t.sizes[1] + 2)),
+                              F6 + 
+                                guides(color = "none", linetype = "none") + 
+                                ggtitle("B") +
+                                theme(plot.title = element_text(size = t.sizes[1] + 2)),
+                              nrow = 2, align = "brlt", axis = "hv")
+
+F6_comb <- cowplot::plot_grid(F6_comb, F6_jL, nrow = 1, rel_widths = c(1, .2))
+save_plot("Figure6.pdf", F6_comb, base_width = 15, base_height = 10)
+
+```
+

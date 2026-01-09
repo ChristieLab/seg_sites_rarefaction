@@ -213,7 +213,7 @@ sub_res[,value := seg_sites/mean(seg_sites)]
 # plot
 p1 <- ggplot(sub_res, aes(x = fis, y = value, group = fis)) +
   geom_violin(draw_quantiles = c(.25, .5, .75)) +
-  geom_point(data = pd,
+  geom_point(data = pd[as.numeric(variable) != 4,],
              aes(color = variable), size = 4, position = position_dodge2(width = .005)) +
   scale_color_manual(values = colors, labels = scales::parse_format()) +
   geom_vline(xintercept = 0, linetype = "dashed")  +
@@ -235,9 +235,9 @@ p1 <- ggplot(sub_res, aes(x = fis, y = value, group = fis)) +
 ggsave("Figure5.svg", p1, height = 10, width = 15, dpi = 1000) # doesn't want to save as pdf with break
 ```
 
-# Figure S6
+# Figure S7
 ```{r}
-S6 <- ggplot(sub_res, aes(x = fis, y = seg_sites, group = fis)) +
+S7 <- ggplot(sub_res, aes(x = fis, y = seg_sites, group = fis)) +
   geom_violin(draw_quantiles = c(.25, .5, .75)) +
   geom_point(data = pd[-grep("Watterson", variable),],
              aes(color = variable, y = raw), size = 4, position = position_dodge2(width = .005)) +
@@ -258,7 +258,7 @@ S6 <- ggplot(sub_res, aes(x = fis, y = seg_sites, group = fis)) +
   xlab(expression(italic(F)[IS])) +
   guides(color = guide_legend(title = "Method"))
 
-ggsave("FigureS6.svg", S6, height = 10, width = 15, dpi = 1000) # doesn't want to save as pdf with break
+ggsave("FigureS7.svg", S6, height = 10, width = 15, dpi = 1000) # doesn't want to save as pdf with break
 
 ```
 
